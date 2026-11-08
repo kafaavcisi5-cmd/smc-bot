@@ -5,6 +5,8 @@ import sqlite3
 from datetime import datetime
 import pandas as pd
 import numpy as np
+from flask import Flask
+import threading
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 import ccxt
@@ -22,6 +24,18 @@ if not TELEGRAM_TOKEN:
     raise ValueError("TELEGRAM_TOKEN bulunamadı!")
 
 exchange = ccxt.binance({'enableRateLimit': True})
+
+# --- RENDER İÇİN MİNİ FLASK SUNUCUSU (Port Hatasını Önler) ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "SMC Telegram Bot aktif ve çalışıyor!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
 
 # --- VERİTABANI YÖNETİMİ ---
 def init_db():
@@ -348,4 +362,10 @@ def main():
     application.run_polling()
 
 if __name__ == "__main__":
+    # Render port gereksinimi için Flask sunucusunu arka planda başlatıyoruz
+    web_thread = threading.Thread(target=run_web)
+    web_thread.daemon = True
+    web_thread.start()
+
+    # Telegram botunu ana akışta başlatıyoruz
     main()
