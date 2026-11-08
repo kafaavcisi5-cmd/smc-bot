@@ -50,7 +50,6 @@ def save_signals(signals):
 
 def log_new_signal(symbol, fvg_type, entry, sl, tp1, tp2):
     signals = load_signals()
-    # Aynı paritede açık sinyal varsa tekrar ekleme
     for s in signals:
         if s["symbol"] == symbol and s["status"] == "Açık":
             return
@@ -285,7 +284,7 @@ def bot_loop():
         all_prices = {**crypto_prices, **market_prices}
         update_open_signals(all_prices)
         
-        print("--- Tarama ve Performans Güncellemesi Tamamlandı ---
+        print("--- Tarama ve Performans Güncellemesi Tamamlandı ---")
         time.sleep(600)
 
 def telegram_listener():
@@ -318,3 +317,4 @@ threading.Thread(target=bot_loop, daemon=True).start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
+            
