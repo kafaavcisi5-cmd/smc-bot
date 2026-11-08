@@ -23,7 +23,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Geçmiş Komutlu Trend Filtreli SMC Bot Aktif!"
+    return "Paper Trading SMC Bot Aktif ve Çalışıyor!"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -297,7 +297,7 @@ def advanced_smc_analysis(df_1h, df_4h=None):
     return "Denge", False, 0, 0, 0, 0
 
 def scan_all_markets_manually():
-    send_telegram_message(TELEGRAM_CHAT_ID, "🔍 *Trend Filtreli Kapsamlı Tarama Başlatıldı...*")
+    send_telegram_message(TELEGRAM_CHAT_ID, "🔍 *Trend ve Hacim Filtreli Tarama Başlatıldı...*")
     cp, mp = scan_crypto_markets(), scan_traditional_markets()
     update_open_signals({**cp, **mp})
     send_telegram_message(TELEGRAM_CHAT_ID, "✅ *Tarama Tamamlandı!*")
@@ -378,7 +378,7 @@ def telegram_listener():
                     msg_obj = r.get("message", {})
                     chat_id, text = msg_obj.get("chat", {}).get("id"), msg_obj.get("text", "").strip()
                     if text.startswith("/start"):
-                        send_telegram_message(chat_id, "🤖 *Trend Filtreli Portföy Botu Aktif!*\n\nKomutlar:\n• `/istatistik` -> Bakiye ve başarı\n• `/grafik` -> Equity Curve\n• `/durum` -> Açık pozisyonlar\n• `/gecmis` -> Son sonuçlanan işlemler\n• `/tara` -> Manuel tara\n• `/backtest` -> 1000$ simülasyon")
+                        send_telegram_message(chat_id, "🤖 *Paper Trading SMC Bot Aktif!*\n\nKomutlar:\n• `/istatistik` -> Bakiye ve başarı\n• `/grafik` -> Equity Curve\n• `/durum` -> Açık pozisyonlar\n• `/gecmis` -> Geçmiş işlemler\n• `/tara` -> Manuel tara\n• `/backtest` -> 1000$ simülasyon")
                     elif text.startswith("/istatistik"): send_telegram_message(chat_id, get_performance_stats())
                     elif text.startswith("/grafik"):
                         send_telegram_message(chat_id, "📈 Grafik hazırlanıyor...")
