@@ -18,14 +18,20 @@ logger = logging.getLogger(__name__)
 # ==========================================
 # 1. VERİTABANI BAĞLANTISI (SUPABASE)
 # ==========================================
-# Eğer DATABASE_URL postgresql:// ile başlıyorsa SQLAlchemy'nin doğru sürücüyü seçmesi için:
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
-elif DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-engine = create_engine(DATABASE_URL) if DATABASE_URL else create_engine("sqlite:///bot_local.db")
+if not DATABASE_URL:
+    logger.warning("DATABASE_URL çevre değişkeni bulunamadı! Yerel SQLite veritabanına bağlanılıyor.")
+    DATABASE_URL = "sqlite:///bot_local.db"
+else:
+    # PostgreSQL sürücü uyumluluğu
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif DATABASE_URL.startswith("postgresql://"):
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
+engine = create_engine(DATABASE_URL)
+Base = declarative_base()
 
 class TradeRecord(Base):
     __tablename__ = 'trade_records'
