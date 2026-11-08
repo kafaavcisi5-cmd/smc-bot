@@ -2,10 +2,18 @@ import ccxt
 import requests
 import pandas as pd
 import time
+import threading
+from flask import Flask
 
 # Telegram Bot Ayarları
 TELEGRAM_BOT_TOKEN = "9147785620:AAGDSk6n_dppdsFt0xsGKlnoD8rCHfp3rdo"
 TELEGRAM_CHAT_ID = "1709473407"
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "SMC Bot Aktif ve Çalışıyor!"
 
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -36,7 +44,7 @@ def check_smc_signals():
         
         price_change = ((last_close - prev_close) / prev_close) * 100
         
-        if abs(price_change) > 0.0:  # Test için eşiği düşük tuttuk
+        if abs(price_change) > 0.0:  # Test için
             signal_msg = (
                 f"🚨 *SMC / Piyasa Alarmı!* 🚨\n\n"
                 f"📊 *Parite:* `{symbol}`\n"
@@ -53,7 +61,17 @@ def check_smc_signals():
     except Exception as e:
         print(f"Veri çekme hatası: {e}")
 
+def bot_loop():
+    while True:
+        check_smc_signals()
+        time.sleep(300) # Her 5 dakikada bir tarama yapar
+
 if __name__ == "__main__":
-    print("SMC Tarama Botu Çalıştı...")
-    check_smc_signals()
-  
+    # Bot döngüsünü arka planda (thread olarak) başlatıyoruz
+    t = threading.Thread(target=bot_loop)
+    t.daemon = True
+    t.start()
+    
+    # Render port gereksinimi için Flask sunucusunu başlatıyoruz
+    app.run(host='0.0.0.0', port=10000)
+    
