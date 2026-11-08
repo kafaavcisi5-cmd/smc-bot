@@ -6,4 +6,3 @@ python-telegram-bot
 SQLAlchemy
 psycopg
 psycopg2-binary
-matplotlib
