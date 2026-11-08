@@ -19,10 +19,9 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Kalıcı Veritabanlı SMC Bot Kesintisiz Çalışıyor!"
+    return "Tam Donanımlı İşlevsel SMC Bot Kesintisiz Çalışıyor!"
 
 def init_db():
-    """Verilerin silinmemesi için SQLite veritabanı tablosu"""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute('''
@@ -60,7 +59,6 @@ def log_new_signal(symbol, fvg_type, entry, sl, tp1, tp2):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
-    # Aynı paritede açık sinyal var mı kontrol et
     cursor.execute("SELECT id FROM signals WHERE symbol = ? AND status = 'Açık'", (symbol,))
     if cursor.fetchone():
         conn.close()
@@ -90,25 +88,41 @@ def update_open_signals(current_prices):
             if is_bullish:
                 if price >= tp1:
                     cursor.execute("UPDATE signals SET status = 'Kazandı (TP1)' WHERE id = ?", (sig_id,))
-                    send_telegram_message(TELEGRAM_CHAT_ID, f"🎯 *Hedef Başarıyla Ulaşıldı!*\nParite: `{sym}`\nDurum: Kazandı (TP1: {tp1:.4f})")
+                    send_telegram_message(TELEGRAM_CHAT_ID, f"🎯 *HEDEF BAŞARIYLA ULAŞILDI!*\n\n• Varlık: `{sym}`\n• Durum: Kazandı 🟢\n• Hedef Fiyat: `{tp1:.4f}`")
                     updated = True
                 elif price <= sl:
                     cursor.execute("UPDATE signals SET status = 'Kaybetti (SL)' WHERE id = ?", (sig_id,))
-                    send_telegram_message(TELEGRAM_CHAT_ID, f"🛑 *Stop-Loss Patladı!*\nParite: `{sym}`\nDurum: Kaybetti (SL: {sl:.4f})")
+                    send_telegram_message(TELEGRAM_CHAT_ID, f"🛑 *STOP-LOSS PATLADI!*\n\n• Varlık: `{sym}`\n• Durum: Kaybetti 🔴\n• Stop Seviyesi: `{sl:.4f}`")
                     updated = True
             else:
                 if price <= tp1:
                     cursor.execute("UPDATE signals SET status = 'Kazandı (TP1)' WHERE id = ?", (sig_id,))
-                    send_telegram_message(TELEGRAM_CHAT_ID, f"🎯 *Hedef Başarıyla Ulaşıldı!*\nParite: `{sym}`\nDurum: Kazandı (TP1: {tp1:.4f})")
+                    send_telegram_message(TELEGRAM_CHAT_ID, f"🎯 *HEDEF BAŞARIYLA ULAŞILDI!*\n\n• Varlık: `{sym}`\n• Durum: Kazandı 🟢\n• Hedef Fiyat: `{tp1:.4f}`")
                     updated = True
                 elif price >= sl:
                     cursor.execute("UPDATE signals SET status = 'Kaybetti (SL)' WHERE id = ?", (sig_id,))
-                    send_telegram_message(TELEGRAM_CHAT_ID, f"🛑 *Stop-Loss Patladı!*\nParite: `{sym}`\nDurum: Kaybetti (SL: {sl:.4f})")
+                    send_telegram_message(TELEGRAM_CHAT_ID, f"🛑 *STOP-LOSS PATLADI!*\n\n• Varlık: `{sym}`\n• Durum: Kaybetti 🔴\n• Stop Seviyesi: `{sl:.4f}`")
                     updated = True
                     
     if updated:
         conn.commit()
     conn.close()
+
+def get_active_signals_text():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT symbol, type, entry, sl, tp1, date FROM signals WHERE status = 'Açık'")
+    rows = cursor.fetchall()
+    conn.close()
+    
+    if not rows:
+        return "📂 *Aktif Pozisyon Durumu*\n\nŞu an açık (takip edilen) aktif sinyal bulunmuyor."
+        
+    msg = "📂 *Şu An Açık Olan Pozisyonlar:*\n\n"
+    for r in rows:
+        sym, stype, entry, sl, tp1, date = r
+        msg += f"• **{sym}** (`{stype}`)\n  - Giriş: `{entry}`\n  - Stop: `{sl}` | Hedef: `{tp1}`\n  - Tarih: `{date}`\n\n"
+    return msg
 
 def get_performance_stats():
     conn = sqlite3.connect(DB_FILE)
@@ -303,6 +317,18 @@ def advanced_smc_analysis(df, timeframe):
 
     return fvg_signal, is_valid_fvg, entry, sl, tp1, tp2
 
+def scan_all_markets_manually():
+    """Manuel /tara komutu için tüm piyasaları anlık tarar"""
+    msg = "🔍 *Manuel Piyasa Taraması Başlatıldı...*\n\n"
+    send_telegram_message(TELEGRAM_CHAT_ID, msg)
+    
+    crypto_prices = scan_crypto_markets()
+    market_prices = scan_traditional_markets()
+    all_prices = {**crypto_prices, **market_prices}
+    update_open_signals(all_prices)
+    
+    send_telegram_message(TELEGRAM_CHAT_ID, "✅ *Manuel Tarama Tamamlandı!* Yeni fırsatlar kontrol edildi.")
+
 def scan_crypto_markets():
     exchange = ccxt.binance()
     symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
@@ -321,17 +347,24 @@ def scan_crypto_markets():
             analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df, '1h')
             
             if is_fvg:
+                # Akıllı Risk Yönetimi Özeti (Örn: 1000$ bütçeye göre %1 risk = 10$ risk)
+                risk_per_unit = abs(entry - sl)
+                risk_amount_usd = 10.0  # %1 risk varsayımı
+                suggested_units = (risk_amount_usd / risk_per_unit) if risk_per_unit > 0 else 0
+                
                 msg = (
-                    f"🚀 *Pro Kripto Sinyal*\n\n"
-                    f"📊 *Parite:* `{symbol}`\n"
-                    f"💲 *Fiyat:* `{last_close}`\n"
-                    f"📈 *Değişim:* `%{change:.2f}`\n"
-                    f"🧠 *Analiz:* `{analysis}`\n\n"
-                    f"🎯 *İşlem Seviyeleri (ATR):*\n"
+                    f"🚨 *PRO KRİPTO SİNYAL*\n\n"
+                    f"• Varlık: `{symbol}`\n"
+                    f"• Fiyat: `{last_close}`\n"
+                    f"• Değişim: `%{change:.2f}`\n"
+                    f"• Strateji: `{analysis}`\n\n"
+                    f"🎯 *İşlem Seviyeleri:*\n"
                     f"• Giriş: `{entry:.4f}`\n"
                     f"• Stop-Loss (SL): `{sl:.4f}`\n"
                     f"• Hedef 1 (TP1): `{tp1:.4f}`\n"
-                    f"• Hedef 2 (TP2): `{tp2:.4f}`"
+                    f"• Hedef 2 (TP2): `{tp2:.4f}`\n\n"
+                    f"🛡️ *Risk Asistanı (10$ Risk Örneği):*\n"
+                    f"• Önerilen Pozisyon Boyutu: `{suggested_units:.4f} adet`"
                 )
                 log_new_signal(symbol, analysis, entry, sl, tp1, tp2)
                 send_telegram_message(TELEGRAM_CHAT_ID, msg)
@@ -373,17 +406,23 @@ def scan_traditional_markets():
             analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df, "1h")
             
             if is_fvg:
+                risk_per_unit = abs(entry - sl)
+                risk_amount_usd = 10.0
+                suggested_units = (risk_amount_usd / risk_per_unit) if risk_per_unit > 0 else 0
+                
                 msg = (
-                    f"📈 *Pro Piyasa Sinyal*\n\n"
-                    f"📊 *Varlık:* `{name}`\n"
-                    f"💲 *Fiyat:* `{last_close:.2f}`\n"
-                    f"📈 *Değişim:* `%{change:.2f}`\n"
-                    f"🧠 *Analiz:* `{analysis}`\n\n"
-                    f"🎯 *İşlem Seviyeleri (ATR):*\n"
+                    f"📈 *PRO PİYASA SİNYAL*\n\n"
+                    f"• Varlık: `{name}`\n"
+                    f"• Fiyat: `{last_close:.2f}`\n"
+                    f"• Değişim: `%{change:.2f}`\n"
+                    f"• Strateji: `{analysis}`\n\n"
+                    f"🎯 *İşlem Seviyeleri:*\n"
                     f"• Giriş: `{entry:.2f}`\n"
                     f"• Stop-Loss (SL): `{sl:.2f}`\n"
                     f"• Hedef 1 (TP1): `{tp1:.2f}`\n"
-                    f"• Hedef 2 (TP2): `{tp2:.2f}`"
+                    f"• Hedef 2 (TP2): `{tp2:.2f}`\n\n"
+                    f"🛡️ *Risk Asistanı (10$ Risk Örneği):*\n"
+                    f"• Önerilen Boyut: `{suggested_units:.2f} adet`"
                 )
                 log_new_signal(name, analysis, entry, sl, tp1, tp2)
                 send_telegram_message(TELEGRAM_CHAT_ID, msg)
@@ -397,7 +436,7 @@ def scan_traditional_markets():
 def bot_loop():
     time.sleep(15)
     while True:
-        print("--- Veritabanlı Tarama Başlatıldı ---")
+        print("--- Otomatik Tarama Başlatıldı ---")
         try:
             crypto_prices = scan_crypto_markets()
             market_prices = scan_traditional_markets()
@@ -424,10 +463,23 @@ def telegram_listener():
                     text = message.get("text", "").strip()
                     
                     if text.startswith("/start"):
-                        send_telegram_message(chat_id, "🤖 Kalıcı Veritabanlı SMC Bot aktif!\n• /istatistik -> Canlı başarı oranını gösterir.\n• /backtest -> Profesyonel test raporunu sunar.")
+                        help_text = (
+                            "🤖 *Tam Donanımlı Profesyonel SMC Bot Aktif!*\n\n"
+                            "Komut Listeniz:\n"
+                            "• `/istatistik` -> Canlı başarı oranını ve sonuçları gösterir.\n"
+                            "• `/durum` (veya `/aktif`) -> Şu an açık pozisyonlarınızı listeler.\n"
+                            "• `/tara` -> Piyasaları hemen şimdi manuel taratır.\n"
+                            "• `/backtest` -> Geçmiş veri simülasyon raporunu sunar."
+                        )
+                        send_telegram_message(chat_id, help_text)
                     elif text.startswith("/istatistik"):
                         stats = get_performance_stats()
                         send_telegram_message(chat_id, stats)
+                    elif text.startswith("/durum") or text.startswith("/aktif"):
+                        active_text = get_active_signals_text()
+                        send_telegram_message(chat_id, active_text)
+                    elif text.startswith("/tara"):
+                        threading.Thread(target=scan_all_markets_manually, daemon=True).start()
                     elif text.startswith("/backtest"):
                         send_telegram_message(chat_id, "⏳ Profesyonel backtest simülasyonu çalıştırılıyor...")
                         bt_result = run_backtest_simulation()
