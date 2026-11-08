@@ -10,6 +10,10 @@ TELEGRAM_CHAT_ID = "1709473407"
 
 app = Flask(__name__)
 
+@app.route('/')
+def home():
+    return "SMC Bot 7/24 Aktif ve Çalışıyor!"
+
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
@@ -42,7 +46,7 @@ def check_smc_signals():
             f"🚨 *SMC / Piyasa Alarmı!* 🚨\n\n"
             f"📊 *Parite:* `{symbol}`\n"
             f"⏱ *Zaman Dilimi:* `{timeframe}`\n"
-            f"💡 *Durum:* Bot aktif ve tarama yapıyor!\n"
+            f"💡 *Durum:* Render Web Service Aktif!\n"
             f"💲 *Güncel Fiyat:* `{last_close}`\n"
             f"📈 *Değişim:* `%{price_change:.2f}`"
         )
@@ -53,18 +57,14 @@ def check_smc_signals():
         print(f"Veri çekme hatası: {e}")
 
 def bot_loop():
-    time.sleep(3)
+    time.sleep(5)
     check_smc_signals()
     while True:
-        time.sleep(300)
+        time.sleep(300) # Her 5 dakikada bir tarama
         check_smc_signals()
 
-# Gunicorn başlar başlamaz arka plan döngüsünü tetikler
+# Arka plan iş parçacığını başlatıyoruz
 threading.Thread(target=bot_loop, daemon=True).start()
-
-@app.route('/')
-def home():
-    return "SMC Bot Aktif ve Çalışıyor!"
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)
