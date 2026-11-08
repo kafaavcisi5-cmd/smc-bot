@@ -127,11 +127,20 @@ def get_performance_stats():
     )
 
 def run_backtest_simulation():
-    """Geçmiş verilerle telefondan tetiklenebilen simülasyon"""
+    """yfinance kullanarak Render üzerinde engelsiz çalışan geçmiş simülasyonu"""
     try:
-        exchange = ccxt.binance()
-        ohlcv = exchange.fetch_ohlcv('BTC/USDT', '1h', limit=300)
-        df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        # Yahoo Finance üzerinden Bitcoin verilerini çekelim (Render engeline takılmaz)
+        data = yf.download("BTC-USD", period="1mo", interval="1h", progress=False)
+        if data.empty or len(data) < 25:
+            return "Backtest için yeterli veri alınamadı."
+
+        df = pd.DataFrame({
+            'open': data['Open'].values.flatten(),
+            'high': data['High'].values.flatten(),
+            'low': data['Low'].values.flatten(),
+            'close': data['Close'].values.flatten(),
+            'volume': data['Volume'].values.flatten() if 'Volume' in data else 0
+        })
         
         total_signals = 0
         won_trades = 0
@@ -188,8 +197,8 @@ def run_backtest_simulation():
         win_rate = (won_trades / closed_trades * 100) if closed_trades > 0 else 0
         
         return (
-            f"📈 *Geçmiş Veri Backtest Raporu (BTC/USDT)*\n\n"
-            f"• Taranan Mum: `300 adet`\n"
+            f"📈 *Geçmiş Veri Backtest Raporu (BTC)*\n\n"
+            f"• Taranan Mum: `{len(df)} adet`\n"
             f"• Toplam Sinyal: `{total_signals}`\n"
             f"• Sonuçlanan: `{closed_trades}`\n"
             f"• Kazanan (TP): `{won_trades}` 🟢\n"
@@ -197,7 +206,7 @@ def run_backtest_simulation():
             f"🏆 *Geçmiş Başarı Oranı:* `%{win_rate:.1f}`"
         )
     except Exception as e:
-        return f"Backtest çalıştırılırken hata oluştu: {e}"
+        return f"Backtest hatası: {e}"
 
 def calculate_risk_reward(df, fvg_type, current_price):
     recent_low = df['low'].iloc[-5:-1].min()
@@ -395,4 +404,4 @@ threading.Thread(target=bot_loop, daemon=True).start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
-                            
+    
