@@ -19,7 +19,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Ultra Profesyonel SMC Bot (Kesin Çözüm) Aktif!"
+    return "Onay Filtreli Profesyonel SMC Bot Aktif!"
 
 def send_telegram_message(chat_id, message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -107,7 +107,7 @@ def get_performance_stats():
     signals = load_signals()
     total = len(signals)
     if total == 0:
-        return "📊 *Bot Performans İstatistiği*\n\nHenüz kaydedilmiş bir sinyal bulunmuyor."
+        return "📊 *Bot Performans İstatistiği*\n\nHenüz kaydedilmiş bir sinyal bulunguyor."
         
     won = sum(1 for s in signals if "Kazandı" in s["status"])
     lost = sum(1 for s in signals if "Kaybetti" in s["status"])
@@ -127,7 +127,7 @@ def get_performance_stats():
     )
 
 def run_backtest_simulation():
-    """Retest (Geri Çekilme) Mantıklı Profesyonel Backtest Motoru"""
+    """Retest + Onay Mumu (Rejection) Filtreli Profesyonel Backtest Motoru"""
     try:
         data = yf.download("BTC-USD", period="1mo", interval="1h", progress=False)
         if data.empty or len(data) < 50:
@@ -164,24 +164,24 @@ def run_backtest_simulation():
                 trade_result = "Açık"
                 
                 if is_bullish_fvg:
-                    fvg_level = float(window_df['high'].iloc[-3]) # FVG alt sınırı retest seviyesi
-                    sl = recent_low - (recent_low * 0.015) # Genişletilmiş güvenli SL (%1.5)
+                    fvg_level = float(window_df['high'].iloc[-3])
+                    sl = recent_low - (recent_low * 0.015)
                     
-                    # Retest kontrolü: Fiyat FVG bölgesine geri çekildi mi?
-                    retested = False
+                    # Onay Mumu Şartı: Fiyat FVG'ye değecek VE o mum yeşil kapatarak yukarı tepki verecek
+                    confirmed = False
                     entry = fvg_level
                     for idx, row in future_candles.iterrows():
-                        if row['low'] <= fvg_level:
-                            retested = True
-                            entry = fvg_level
+                        if row['low'] <= fvg_level and row['close'] > row['open']:
+                            confirmed = True
+                            entry = float(row['close'])
                             break
                     
-                    if not retested:
-                        continue # Retest almayan işlemi atla (kalite filtresi)
+                    if not confirmed:
+                        continue
                         
                     risk = entry - sl
                     if risk <= 0: continue
-                    tp1 = entry + (risk * 2) # 1:2 Sağlam R:R
+                    tp1 = entry + (risk * 2)
                     
                     for _, row in future_candles.iterrows():
                         hit_tp = row['high'] >= tp1
@@ -200,15 +200,15 @@ def run_backtest_simulation():
                     fvg_level = float(window_df['low'].iloc[-3])
                     sl = recent_high + (recent_high * 0.015)
                     
-                    retested = False
+                    confirmed = False
                     entry = fvg_level
                     for idx, row in future_candles.iterrows():
-                        if row['high'] >= fvg_level:
-                            retested = True
-                            entry = fvg_level
+                        if row['high'] >= fvg_level and row['close'] < row['open']:
+                            confirmed = True
+                            entry = float(row['close'])
                             break
                     
-                    if not retested:
+                    if not confirmed:
                         continue
                         
                     risk = sl - entry
@@ -237,7 +237,7 @@ def run_backtest_simulation():
         win_rate = (won_trades / closed_trades * 100) if closed_trades > 0 else 0
         
         return (
-            f"🎯 *Kusursuz Retest Backtest Raporu (BTC)*\n\n"
+            f"🔥 *Onay Filtreli Backtest Raporu (BTC)*\n\n"
             f"• Taranan Mum: `{len(df)} adet`\n"
             f"• Toplam Sinyal: `{total_signals}`\n"
             f"• Sonuçlanan: `{closed_trades}`\n"
@@ -282,10 +282,10 @@ def advanced_smc_analysis(df, timeframe):
     is_valid_fvg = False
     
     if (df['low'].iloc[-1] > df['high'].iloc[-3]) and (current_close > sma_val):
-        fvg_signal = "🟢 Boğa FVG (Retest Bekleniyor)"
+        fvg_signal = "🟢 Boğa FVG (Onay Bekleniyor)"
         is_valid_fvg = True
     elif (df['high'].iloc[-1] < df['low'].iloc[-3]) and (current_close < sma_val):
-        fvg_signal = "🔴 Ayı FVG (Retest Bekleniyor)"
+        fvg_signal = "🔴 Ayı FVG (Onay Bekleniyor)"
         is_valid_fvg = True
 
     current_price = float(df['close'].iloc[-1])
@@ -321,7 +321,7 @@ def scan_crypto_markets():
             if is_fvg:
                 msg += (
                     f"\n🎯 *İşlem Seviyeleri (R:R):*\n"
-                    f"• Giriş (Retest): `{entry:.4f}`\n"
+                    f"• Giriş (Onaylı): `{entry:.4f}`\n"
                     f"• Stop-Loss (SL): `{sl:.4f}`\n"
                     f"• Hedef 1 (TP1): `{tp1:.4f}`\n"
                     f"• Hedef 2 (TP2): `{tp2:.4f}`"
@@ -376,7 +376,7 @@ def scan_traditional_markets():
             if is_fvg:
                 msg += (
                     f"\n🎯 *İşlem Seviyeleri (R:R):*\n"
-                    f"• Giriş (Retest): `{entry:.2f}`\n"
+                    f"• Giriş (Onaylı): `{entry:.2f}`\n"
                     f"• Stop-Loss (SL): `{sl:.2f}`\n"
                     f"• Hedef 1 (TP1): `{tp1:.2f}`\n"
                     f"• Hedef 2 (TP2): `{tp2:.2f}`"
@@ -393,7 +393,7 @@ def scan_traditional_markets():
 def bot_loop():
     time.sleep(10)
     while True:
-        print("--- Kusursuz Tarama Başlatıldı ---")
+        print("--- Onay Filtreli Tarama Başlatıldı ---")
         crypto_prices = scan_crypto_markets()
         market_prices = scan_traditional_markets()
         
@@ -419,12 +419,12 @@ def telegram_listener():
                     text = message.get("text", "").strip()
                     
                     if text.startswith("/start"):
-                        send_telegram_message(chat_id, "🤖 Kusursuz SMC Bot aktif!\n• /istatistik -> Canlı başarı oranını gösterir.\n• /backtest -> Profesyonel retest raporunu sunar.")
+                        send_telegram_message(chat_id, "🤖 Onay Filtreli SMC Bot aktif!\n• /istatistik -> Canlı başarı oranını gösterir.\n• /backtest -> Onaylı test raporunu sunar.")
                     elif text.startswith("/istatistik"):
                         stats = get_performance_stats()
                         send_telegram_message(chat_id, stats)
                     elif text.startswith("/backtest"):
-                        send_telegram_message(chat_id, "⏳ Retest tabanlı profesyonel backtest çalıştırılıyor...")
+                        send_telegram_message(chat_id, "⏳ Onay filtreli backtest simülasyonu çalıştırılıyor...")
                         bt_result = run_backtest_simulation()
                         send_telegram_message(chat_id, bt_result)
         except Exception as e:
