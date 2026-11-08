@@ -23,9 +23,10 @@ def send_telegram_message(message):
     }
     try:
         response = requests.post(url, json=payload)
+        print(f"Telegram Yanıtı: {response.text}") # Hatayı Render loglarında görmek için
         return response.json()
     except Exception as e:
-        print(f"Telegram mesajı gönderilemedi: {e}")
+        print(f"Telegram bağlantı hatası: {e}")
 
 def check_smc_signals():
     exchange = ccxt.binance()
@@ -46,24 +47,21 @@ def check_smc_signals():
             f"🚨 *SMC / Piyasa Alarmı!* 🚨\n\n"
             f"📊 *Parite:* `{symbol}`\n"
             f"⏱ *Zaman Dilimi:* `{timeframe}`\n"
-            f"💡 *Durum:* Bot başarıyla çalıştı!\n"
+            f"💡 *Durum:* Bot bağlantısı başarılı!\n"
             f"💲 *Güncel Fiyat:* `{last_close}`\n"
             f"📈 *Değişim:* `%{price_change:.2f}`"
         )
         send_telegram_message(signal_msg)
-        print("Sinyal Telegram'a gönderildi.")
             
     except Exception as e:
         print(f"Veri çekme hatası: {e}")
 
 def bot_loop():
-    time.sleep(3)
-    check_smc_signals()
+    time.sleep(5)
     while True:
-        time.sleep(300) # Her 5 dakikada bir
         check_smc_signals()
+        time.sleep(300) # Her 5 dakikada bir
 
-# Arka plan iş parçacığını doğrudan başlatıyoruz
 threading.Thread(target=bot_loop, daemon=True).start()
 
 if __name__ == "__main__":
