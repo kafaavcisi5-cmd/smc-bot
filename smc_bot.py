@@ -127,9 +127,8 @@ def get_performance_stats():
     )
 
 def run_backtest_simulation():
-    """yfinance kullanarak Render üzerinde engelsiz çalışan geçmiş simülasyonu"""
+    """Optimize edilmiş Stop-Loss oranlarıyla gerçekçi backtest simülasyonu"""
     try:
-        # Yahoo Finance üzerinden Bitcoin verilerini çekelim (Render engeline takılmaz)
         data = yf.download("BTC-USD", period="1mo", interval="1h", progress=False)
         if data.empty or len(data) < 25:
             return "Backtest için yeterli veri alınamadı."
@@ -162,9 +161,12 @@ def run_backtest_simulation():
                 recent_high = window_df['high'].iloc[-5:-1].max()
                 
                 if is_bullish_fvg:
-                    sl = recent_low - (recent_low * 0.002)
+                    # SL mesafesini %1 oranına çıkardık (gürültüden kaçınmak için)
+                    sl = recent_low - (recent_low * 0.01)
                     risk = entry - sl
+                    if risk <= 0: risk = entry * 0.01
                     tp1 = entry + (risk * 2)
+                    
                     future_candles = df.iloc[i:i+20]
                     trade_result = "Açık"
                     for _, row in future_candles.iterrows():
@@ -178,9 +180,11 @@ def run_backtest_simulation():
                     elif trade_result == "Kaybetti": lost_trades += 1
 
                 elif is_bearish_fvg:
-                    sl = recent_high + (recent_high * 0.002)
+                    sl = recent_high + (recent_high * 0.01)
                     risk = sl - entry
+                    if risk <= 0: risk = entry * 0.01
                     tp1 = entry - (risk * 2)
+                    
                     future_candles = df.iloc[i:i+20]
                     trade_result = "Açık"
                     for _, row in future_candles.iterrows():
@@ -197,13 +201,13 @@ def run_backtest_simulation():
         win_rate = (won_trades / closed_trades * 100) if closed_trades > 0 else 0
         
         return (
-            f"📈 *Geçmiş Veri Backtest Raporu (BTC)*\n\n"
+            f"📈 *Optimize Edilmiş Backtest Raporu (BTC)*\n\n"
             f"• Taranan Mum: `{len(df)} adet`\n"
             f"• Toplam Sinyal: `{total_signals}`\n"
             f"• Sonuçlanan: `{closed_trades}`\n"
             f"• Kazanan (TP): `{won_trades}` 🟢\n"
             f"• Kaybeden (SL): `{lost_trades}` 🔴\n"
-            f"🏆 *Geçmiş Başarı Oranı:* `%{win_rate:.1f}`"
+            f"🏆 *Güncel Başarı Oranı:* `%{win_rate:.1f}`"
         )
     except Exception as e:
         return f"Backtest hatası: {e}"
@@ -214,7 +218,7 @@ def calculate_risk_reward(df, fvg_type, current_price):
     
     if "Boğa" in fvg_type:
         entry = current_price
-        stop_loss = recent_low - (recent_low * 0.002)
+        stop_loss = recent_low - (recent_low * 0.01) # Canlıda da %1 esneklik payı
         risk = entry - stop_loss
         if risk <= 0: risk = entry * 0.01
         tp1 = entry + (risk * 2)
@@ -222,7 +226,7 @@ def calculate_risk_reward(df, fvg_type, current_price):
         return entry, stop_loss, tp1, tp2
     elif "Ayı" in fvg_type:
         entry = current_price
-        stop_loss = recent_high + (recent_high * 0.002)
+        stop_loss = recent_high + (recent_high * 0.01)
         risk = stop_loss - entry
         if risk <= 0: risk = entry * 0.01
         tp1 = entry - (risk * 2)
@@ -386,12 +390,12 @@ def telegram_listener():
                     text = message.get("text", "").strip()
                     
                     if text.startswith("/start"):
-                        send_telegram_message(chat_id, "🤖 Pro SMC Bot aktif!\n• /istatistik -> Canlı sinyal başarı oranını gösterir.\n• /backtest -> Geçmiş verilerle stratejiyi test eder.")
+                        send_telegram_message(chat_id, "🤖 Pro SMC Bot aktif!\n• /istatistik -> Canlı başarı oranını gösterir.\n• /backtest -> Optimize edilmiş geçmiş test raporunu sunar.")
                     elif text.startswith("/istatistik"):
                         stats = get_performance_stats()
                         send_telegram_message(chat_id, stats)
                     elif text.startswith("/backtest"):
-                        send_telegram_message(chat_id, "⏳ Backtest simülasyonu çalıştırılıyor, lütfen bekleyin...")
+                        send_telegram_message(chat_id, "⏳ Optimize edilmiş backtest simülasyonu çalıştırılıyor...")
                         bt_result = run_backtest_simulation()
                         send_telegram_message(chat_id, bt_result)
         except Exception as e:
@@ -404,4 +408,4 @@ threading.Thread(target=bot_loop, daemon=True).start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
-    
+        
