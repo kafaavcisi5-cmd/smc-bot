@@ -379,4 +379,21 @@ def telegram_listener():
                     chat_id, text = msg_obj.get("chat", {}).get("id"), msg_obj.get("text", "").strip()
                     if text.startswith("/start"):
                         send_telegram_message(chat_id, "🤖 *Trend Filtreli Portföy Botu Aktif!*\n\nKomutlar:\n• `/istatistik` -> Bakiye ve başarı\n• `/grafik` -> Equity Curve\n• `/durum` -> Açık pozisyonlar\n• `/gecmis` -> Son sonuçlanan işlemler\n• `/tara` -> Manuel tara\n• `/backtest` -> 1000$ simülasyon")
-                    elif text.startswith("/istatistik"): send_telegram_message(chat_id, get_pe
+                    elif text.startswith("/istatistik"): send_telegram_message(chat_id, get_performance_stats())
+                    elif text.startswith("/grafik"):
+                        send_telegram_message(chat_id, "📈 Grafik hazırlanıyor...")
+                        send_telegram_photo(chat_id, get_equity_curve_chart(), "📊 *Bakiye Eğrisi*")
+                    elif text.startswith("/durum") or text.startswith("/aktif"): send_telegram_message(chat_id, get_active_signals_text())
+                    elif text.startswith("/gecmis"): send_telegram_message(chat_id, get_past_signals_text())
+                    elif text.startswith("/tara"): threading.Thread(target=scan_all_markets_manually, daemon=True).start()
+                    elif text.startswith("/backtest"):
+                        send_telegram_message(chat_id, "⏳ Backtest çalışıyor...")
+                        send_telegram_message(chat_id, run_backtest_simulation())
+        except Exception as e: print(e)
+        time.sleep(2)
+
+threading.Thread(target=telegram_listener, daemon=True).start()
+threading.Thread(target=bot_loop, daemon=True).start()
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
