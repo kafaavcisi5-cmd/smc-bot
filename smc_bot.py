@@ -75,7 +75,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"🤖 SMC Otomasyon Botu Aktif, {user_name}!\n"
         f"💰 Mevcut Sermaye: ${bal:.2f}\n"
-        "Detaylı TP/SL ve Güven Puanı modülü devrede."
+        "Anlık Dolar bazlı PnL takip modülü devrede."
     )
 
 async def istatistik(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -109,7 +109,7 @@ async def istatistik(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="Markdown")
 
 async def tara(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔍 Piyasalar taranıyor, SMC seviyeleri (TP/SL/Güven) hesaplanıyor...")
+    await update.message.reply_text("🔍 Piyasalar taranıyor ve sinyaller portföye işleniyor...")
     
     signals_found = []
     conn = sqlite3.connect("bot_data.db")
@@ -126,17 +126,16 @@ async def tara(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             trade_type = "LONG" if change >= 0 else "SHORT"
             
-            # TP, SL ve Güven Puanı Matematiksel Hesaplama
             if trade_type == "LONG":
-                sl = price * 0.985   # %1.5 Zarar Durdur
-                tp1 = price * 1.02   # %2 TP1
-                tp2 = price * 1.04   # %4 TP2
+                sl = price * 0.985
+                tp1 = price * 1.02
+                tp2 = price * 1.04
             else:
                 sl = price * 1.015
                 tp1 = price * 0.98
                 tp2 = price * 0.96
                 
-            confidence = int(min(max(abs(change) * 15 + 60, 60), 95)) # Dinamik Güven Puanı (%60 - %95)
+            confidence = int(min(max(abs(change) * 15 + 60, 60), 95))
 
             cursor.execute("""
                 INSERT INTO trades (symbol, type, entry_price, tp1, tp2, sl, confidence, amount, status, pnl, date)
@@ -146,11 +145,9 @@ async def tara(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             signals_found.append(
                 f"✅ **{symbol}** ({trade_type})\n"
-                f"• **Giriş Fiyatı:** `${price}`\n"
-                f"• **Stop Loss (SL):** `${sl:.4f}`\n"
-                f"• **Hedef 1 (TP1):** `${tp1:.4f}`\n"
-                f"• **Hedef 2 (TP2):** `${tp2:.4f}`\n"
-                f"• **Güven Puanı:** ⭐️ %{confidence}\n"
+                f"• **Giriş:** `${price}` | **Miktar:** `$50`\n"
+                f"• **SL:** `${sl:.4f}` | **TP1:** `${tp1:.4f}`\n"
+                f"• **Güven:** ⭐️ %{confidence}"
             )
         except Exception as e:
             logger.error(f"Tarama hatası {symbol}: {e}")
@@ -185,11 +182,9 @@ async def tara(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 signals_found.append(
                     f"✅ **{name}** ({trade_type})\n"
-                    f"• **Giriş Fiyatı:** `${current_price:.2f}`\n"
-                    f"• **Stop Loss (SL):** `${sl:.2f}`\n"
-                    f"• **Hedef 1 (TP1):** `${tp1:.2f}`\n"
-                    f"• **Hedef 2 (TP2):** `${tp2:.2f}`\n"
-                    f"• **Güven Puanı:** ⭐️ %{confidence}\n"
+                    f"• **Giriş:** `${current_price:.2f}` | **Miktar:** `$50`\n"
+                    f"• **SL:** `${sl:.2f}` | **TP1:** `${tp1:.2f}`\n"
+                    f"• **Güven:** ⭐️ %{confidence}"
                 )
         except Exception as e:
             logger.error(f"YFinance tarama hatası {name}: {e}")
@@ -197,7 +192,7 @@ async def tara(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     if signals_found:
-        response = "🚀 **SMC Seviyeli Tespit Edilen Sinyaller:**\n\n" + "\n\n".join(signals_found)
+        response = "🚀 **Sinyaller Tespit Edildi ve Portföye İşlendi:**\n\n" + "\n\n".join(signals_found)
     else:
         response = "⚠️ Uygun sinyal bulunamadı."
         
@@ -206,7 +201,7 @@ async def tara(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT symbol, type, entry_price, tp1, tp2, sl, confidence FROM trades WHERE status='OPEN'")
+    cursor.execute("SELECT symbol, type, entry_price, amount, sl, tp1 FROM trades WHERE status='OPEN'")
     open_trades = cursor.fetchall()
     conn.close()
 
@@ -214,12 +209,45 @@ async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📋 Şu an açık pozisyon bulunmuyor.")
         return
 
-    text = "📋 **Açık Pozisyonlar ve Seviyeleri:**\n\n"
-    for symbol, t_type, entry, tp1, tp2, sl, conf in open_trades:
-        text += (
-            f"• **{symbol}** ({t_type}) | Giriş: ${entry}\n"
-            f"  SL: ${sl:.4f} | TP1: ${tp1:.4f} | TP2: ${tp2:.4f} | Güven: %{conf}\n\n"
-        )
+    text = "📋 **Açık Pozisyonlar ve Anlık Dolar PnL Durumu:**\n\n"
+    total_unrealized_pnl = 0.0
+
+    for symbol, t_type, entry, amount, sl, tp1 in open_trades:
+        try:
+            current_price = entry
+            if "/" in symbol: # Kripto
+                time.sleep(0.3)
+                ticker = exchange.fetch_ticker(symbol)
+                current_price = ticker['last']
+            elif symbol == "XAUUSD":
+                d = yf.download("GC=F", period="1d", progress=False)
+                if not d.empty: current_price = float(d['Close'].iloc[-1])
+            elif symbol == "EURUSD":
+                d = yf.download("EURUSD=X", period="1d", progress=False)
+                if not d.empty: current_price = float(d['Close'].iloc[-1])
+
+            # Yüzde ve Dolar PnL Hesabı
+            if t_type == "LONG":
+                pnl_pct = ((current_price - entry) / entry) * 100
+            else:
+                pnl_pct = ((entry - current_price) / entry) * 100
+                
+            dollar_pnl = amount * (pnl_pct / 100)
+            total_unrealized_pnl += dollar_pnl
+            
+            emoji = "🟢" if dollar_pnl >= 0 else "🔴"
+            
+            text += (
+                f"• **{symbol}** ({t_type})\n"
+                f"  Giriş: `${entry}` ➔ Anlık: `${current_price}`\n"
+                f"  Anlık PnL: {emoji} **`${dollar_pnl:+.2f}`** (%{pnl_pct:+.2f})\n\n"
+            )
+        except Exception as e:
+            text += f"• **{symbol}** ({t_type}) | Fiyat alınamadı\n\n"
+
+    overall_emoji = "🚀" if total_unrealized_pnl >= 0 else "⚠️"
+    text += f"━━━━━━━━━━━━━━━━━━━━\n"
+    text += f"💰 **Toplam Açık PnL:** {overall_emoji} **`${total_unrealized_pnl:+.2f}`**"
 
     await update.message.reply_text(text, parse_mode="Markdown")
 
