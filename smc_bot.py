@@ -66,31 +66,21 @@ BIST_SYMBOLS = [
 # 3. FVG (FAIR VALUE GAP) VE TREND STRATEJİSİ
 # ==========================================
 def calculate_fvg_and_trend(df):
-    """
-    Mum verileri üzerinden FVG (Fair Value Gap) tespiti ve trend filtresi yapar.
-    df: Pandas DataFrame (Open, High, Low, Close sütunlarını içermelidir)
-    """
     try:
         if len(df) < 10:
             return None
 
-        # Örnek SMC / FVG Mantık Hesaplaması
-        # 3'lü mum formasyonunda boşluk (Fair Value Gap) arama
         highs = df['High'].values
         lows = df['Low'].values
         closes = df['Close'].values
 
-        # Trend Yönü Tespiti (Basit Hareketli Ortalama veya Yapı Kırılımı)
         sma_trend = closes[-1] > np.mean(closes[-20:])
 
-        # FVG Kontrolü (Örn: 1. mumun yüksekliği ile 3. mumun düşüğü arasındaki boşluk)
         for i in range(len(df) - 3, len(df) - 1):
             if i < 2:
                 continue
-            # Boğa FVG (Bullish FVG)
             if lows[i+1] > highs[i-1] and sma_trend:
                 return "BUY"
-            # Ayı FVG (Bearish FVG)
             elif highs[i+1] < lows[i-1] and not sma_trend:
                 return "SELL"
 
@@ -100,7 +90,6 @@ def calculate_fvg_and_trend(df):
         return None
 
 def save_trade_to_db(symbol, action, price):
-    """Veritabanına kalıcı işlem kaydı ekler"""
     try:
         session = Session()
         new_trade = TradeRecord(symbol=symbol, action=action, price=price)
@@ -117,56 +106,49 @@ def save_trade_to_db(symbol, action, price):
 def scan_markets():
     logger.info("Genişletilmiş piyasa taraması başlatılıyor...")
     
-    # --- Kripto Taraması (Binance / CCXT) ---
+    # Kripto Taraması
     exchange = ccxt.binance()
     for symbol in CRYPTO_SYMBOLS:
         try:
             ohlcv = exchange.fetch_ohlcv(symbol, timeframe='1h', limit=50)
             df = pd.DataFrame(ohlcv, columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
-            
             signal = calculate_fvg_and_trend(df)
             if signal:
                 current_price = float(df['Close'].iloc[-1])
                 save_trade_to_db(symbol, signal, current_price)
                 logger.info(f"Sinyal Yakalandı (Kripto): {symbol} - {signal}")
-
-            time.sleep(0.3)  # Rate limit koruması
+            time.sleep(0.3)
         except Exception as e:
             logger.error(f"Kripto tarama hatası ({symbol}): {e}")
 
-    # --- Forex ve Ons Altın Taraması (Yahoo Finance) ---
+    # Forex ve Ons Altın Taraması
     for symbol in FOREX_SYMBOLS:
         try:
             data = yf.download(symbol, interval='1h', period='5d', progress=False)
             if not data.empty and len(data) > 10:
-                # Yahoo Finance multi-index sütun sorununu önlemek için düzeltme
                 if isinstance(data.columns, pd.MultiIndex):
                     data.columns = data.columns.get_level_values(0)
-                
                 signal = calculate_fvg_and_trend(data)
                 if signal:
                     current_price = float(data['Close'].iloc[-1])
                     save_trade_to_db(symbol, signal, current_price)
                     logger.info(f"Sinyal Yakalandı (Forex): {symbol} - {signal}")
-
             time.sleep(0.3)
         except Exception as e:
             logger.error(f"Forex tarama hatası ({symbol}): {e}")
 
-    # --- BİST Taraması (Yahoo Finance) ---
+    # BİST Taraması
     for symbol in BIST_SYMBOLS:
         try:
             data = yf.download(symbol, interval='1h', period='5d', progress=False)
             if not data.empty and len(data) > 10:
                 if isinstance(data.columns, pd.MultiIndex):
                     data.columns = data.columns.get_level_values(0)
-                
                 signal = calculate_fvg_and_trend(data)
                 if signal:
                     current_price = float(data['Close'].iloc[-1])
                     save_trade_to_db(symbol, signal, current_price)
                     logger.info(f"Sinyal Yakalandı (BİST): {symbol} - {signal}")
-
             time.sleep(0.3)
         except Exception as e:
             logger.error(f"BİST tarama hatası ({symbol}): {e}")
@@ -189,4 +171,28 @@ async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Durum sorgulanırken hata oluştu: {e}")
 
-async def tara(update: Update, context: ContextTypes.DEFAULT_
+async def tara(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🔍 Manuel tarama başlatıldı, geniş havuz inceleniyor...")
+    scan_markets()
+    await update.message.reply_text("✅ Tarama tamamlandı.")
+
+# ==========================================
+# 6. ANA ÇALIŞTIRMA BLOĞU
+# ==========================================
+def main():
+    TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+    if not TELEGRAM_TOKEN:
+        logger.error("TELEGRAM_TOKEN çevre değişkeni bulunamadı!")
+        return
+
+    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("durum", durum))
+    application.add_handler(CommandHandler("tara", tara))
+
+    logger.info("Bot başlatıldı, Telegram dinleniyor...")
+    application.run_polling()
+
+if __name__ == "__main__":
+    main()
