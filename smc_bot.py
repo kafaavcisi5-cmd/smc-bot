@@ -23,7 +23,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Anlık PnL Takipli Hedge Fund Terminali Aktif!"
+    return "Çoklu Parite ve 6 Aylık Backtest Destekli Hedge Fund Terminali Aktif!"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -178,15 +178,11 @@ def get_active_signals_text():
         score_val = score if score else 80
         fmt = ".4f" if entry < 1 else ".2f"
         
-        # Anlık fiyatı çekip PnL hesaplayalım
         current_price = entry
         try:
             if "/" in sym:
                 ticker = ex.fetch_ticker(sym)
                 current_price = ticker['last']
-            elif "BIST:" in sym or "Forex:" in sym or "Emtia:" in sym:
-                # Basit simülasyon veya son bilinen fiyat
-                current_price = entry 
         except:
             current_price = entry
 
@@ -241,57 +237,91 @@ def get_performance_stats():
     win_rate = (won / closed * 100) if closed > 0 else 0
     return f"📊 *Bakiye ve Performans*\n\n💰 Başlangıç: $1000.00\n💰 Güncel Bakiye: ${current_bal:.2f}\n📈 Net Kâr: %{net_profit_pct:+.2f}\n\n• Toplam Sinyal: {total}\n• Kazanan: {won} 🟢\n• Kaybeden: {lost} 🔴\n🏆 Başarı Oranı: %{win_rate:.1f}"
 
-def run_backtest_simulation():
-    try:
-        data = yf.download("BTC-USD", period="1mo", interval="1h", progress=False)
-        if data.empty or len(data) < 60:
-            return "Backtest için yeterli veri yok."
-        df = pd.DataFrame({'open': data['Open'].values.flatten(), 'high': data['High'].values.flatten(), 'low': data['Low'].values.flatten(), 'close': data['Close'].values.flatten(), 'volume': data['Volume'].values.flatten() if 'Volume' in data else 0})
-        df['sma50'] = df['close'].rolling(50).mean()
-        high_low = df['high'] - df['low']
-        high_close = abs(df['high'] - df['close'].shift())
-        low_close = abs(df['low'] - df['close'].shift())
-        df['atr'] = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1).rolling(14).mean()
-        total_signals, won_trades, lost_trades, sim_balance = 0, 0, 0, 1000.0
-        for i in range(50, len(df) - 35):
-            prev_candle, prev_prev_candle = df.iloc[i-1], df.iloc[i-3]
-            curr_close, sma_val, curr_atr = float(prev_candle['close']), float(df['sma50'].iloc[i-1]), float(df['atr'].iloc[i-1])
-            if pd.isna(curr_atr) or curr_atr == 0: continue
-            is_bullish = (float(prev_candle['low']) > float(prev_prev_candle['high'])) and (curr_close > sma_val)
-            is_bearish = (float(prev_candle['high']) < float(prev_prev_candle['low'])) and (curr_close < sma_val)
-            if is_bullish or is_bearish:
-                total_signals += 1
-                trade_result, risk_amt = "Acik", sim_balance * 0.02
-                if is_bullish:
-                    fvg_support, confirmed, entry = float(prev_prev_candle['high']), False, float(prev_prev_candle['high'])
-                    for j in range(i, min(i + 35, len(df))):
-                        if float(df.iloc[j]['low']) <= fvg_support and float(df.iloc[j]['close']) > float(df.iloc[j]['open']):
-                            confirmed, entry = True, float(df.iloc[j]['close'])
-                            break
-                    if not confirmed: continue
-                    sl, tp1 = entry - (1.5 * curr_atr), entry + (2.5 * (entry - (entry - (1.5 * curr_atr))))
-                    for j in range(i, min(i + 35, len(df))):
-                        if float(df.iloc[j]['high']) >= tp1: trade_result = "Kazandi"; break
-                        elif float(df.iloc[j]['low']) <= sl: trade_result = "Kaybetti"; break
-                else:
-                    fvg_res, confirmed, entry = float(prev_prev_candle['low']), False, float(prev_prev_candle['low'])
-                    for j in range(i, min(i + 35, len(df))):
-                        if float(df.iloc[j]['high']) >= fvg_res and float(df.iloc[j]['close']) < float(df.iloc[j]['open']):
-                            confirmed, entry = True, float(df.iloc[j]['close'])
-                            break
-                    if not confirmed: continue
-                    sl, tp1 = entry + (1.5 * curr_atr), entry - (2.5 * (1.5 * curr_atr))
-                    for j in range(i, min(i + 35, len(df))):
-                        if float(df.iloc[j]['low']) <= tp1: trade_result = "Kazandi"; break
-                        elif float(df.iloc[j]['high']) >= sl: trade_result = "Kaybetti"; break
-                if trade_result == "Kazandi": won_trades += 1; sim_balance += (risk_amt * 2.5)
-                elif trade_result == "Kaybetti": lost_trades += 1; sim_balance -= risk_amt
-        closed = won_trades + lost_trades
-        win_rate = (won_trades / closed * 100) if closed > 0 else 0
-        net_ret = ((sim_balance - 1000.0) / 1000.0) * 100
-        return f"👑 *Backtest Raporu*\n• Bakiye: `${sim_balance:.2f}`\n• Kâr: `%{net_ret:+.2f}`\n• Sinyal: {total_signals} | Kazanan: {won_trades} 🟢 | Kaybeden: {lost_trades} 🔴\n• Başarı Oranı: %{win_rate:.1f}"
-    except Exception as e:
-        return f"Backtest hatası: {e}"
+def run_multi_asset_backtest():
+    """BTC, ETH, XAUUSD ve EURUSD için son 6 aylık kapsamlı simülasyon"""
+    tickers = {
+        "BTC/USDT": ("BTC-USD", "crypto"),
+        "ETH/USDT": ("ETH-USD", "crypto"),
+        "Altın (XAUUSD)": ("GC=F", "commodity"),
+        "EUR/USD": ("EURUSD=X", "forex")
+    }
+    
+    total_signals, won_trades, lost_trades, sim_balance = 0, 0, 0, 1000.0
+    report_details = []
+
+    for label, (t_sym, t_type) in tickers.items():
+        try:
+            data = yf.download(t_sym, period="6mo", interval="1h", progress=False)
+            if data.empty or len(data) < 60: continue
+            
+            df = pd.DataFrame({
+                'open': data['Open'].values.flatten(), 
+                'high': data['High'].values.flatten(), 
+                'low': data['Low'].values.flatten(), 
+                'close': data['Close'].values.flatten(), 
+                'volume': data['Volume'].values.flatten() if 'Volume' in data else 0
+            })
+            df['sma50'] = df['close'].rolling(50).mean()
+            high_low = df['high'] - df['low']
+            high_close = abs(df['high'] - df['close'].shift())
+            low_close = abs(df['low'] - df['close'].shift())
+            df['atr'] = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1).rolling(14).mean()
+            
+            p_signals, p_won, p_lost = 0, 0, 0
+            for i in range(50, len(df) - 35):
+                prev_candle, prev_prev_candle = df.iloc[i-1], df.iloc[i-3]
+                curr_close, sma_val, curr_atr = float(prev_candle['close']), float(df['sma50'].iloc[i-1]), float(df['atr'].iloc[i-1])
+                if pd.isna(curr_atr) or curr_atr == 0: continue
+                
+                is_bullish = (float(prev_candle['low']) > float(prev_prev_candle['high'])) and (curr_close > sma_val)
+                is_bearish = (float(prev_candle['high']) < float(prev_prev_candle['low'])) and (curr_close < sma_val)
+                
+                if is_bullish or is_bearish:
+                    total_signals += 1
+                    p_signals += 1
+                    trade_result, risk_amt = "Acik", sim_balance * 0.02
+                    if is_bullish:
+                        fvg_support, confirmed, entry = float(prev_prev_candle['high']), False, float(prev_prev_candle['high'])
+                        for j in range(i, min(i + 35, len(df))):
+                            if float(df.iloc[j]['low']) <= fvg_support and float(df.iloc[j]['close']) > float(df.iloc[j]['open']):
+                                confirmed, entry = True, float(df.iloc[j]['close'])
+                                break
+                        if not confirmed: continue
+                        sl, tp1 = entry - (1.5 * curr_atr), entry + (2.5 * (entry - (entry - (1.5 * curr_atr))))
+                        for j in range(i, min(i + 35, len(df))):
+                            if float(df.iloc[j]['high']) >= tp1: trade_result = "Kazandi"; break
+                            elif float(df.iloc[j]['low']) <= sl: trade_result = "Kaybetti"; break
+                    else:
+                        fvg_res, confirmed, entry = float(prev_prev_candle['low']), False, float(prev_prev_candle['low'])
+                        for j in range(i, min(i + 35, len(df))):
+                            if float(df.iloc[j]['high']) >= fvg_res and float(df.iloc[j]['close']) < float(df.iloc[j]['open']):
+                                confirmed, entry = True, float(df.iloc[j]['close'])
+                                break
+                        if not confirmed: continue
+                        sl, tp1 = entry + (1.5 * curr_atr), entry - (2.5 * (1.5 * curr_atr))
+                        for j in range(i, min(i + 35, len(df))):
+                            if float(df.iloc[j]['low']) <= tp1: trade_result = "Kazandi"; break
+                            elif float(df.iloc[j]['high']) >= sl: trade_result = "Kaybetti"; break
+                            
+                    if trade_result == "Kazandi": 
+                        won_trades += 1; p_won += 1; sim_balance += (risk_amt * 2.5)
+                    elif trade_result == "Kaybetti": 
+                        lost_trades += 1; p_lost += 1; sim_balance -= risk_amt
+            
+            p_closed = p_won + p_lost
+            p_wr = (p_won / p_closed * 100) if p_closed > 0 else 0
+            report_details.append(f"• *{label}*: {p_signals} Sinyal (%{p_wr:.1f} Başarı)")
+        except Exception as e:
+            print(f"Backtest hata ({label}): {e}")
+
+    closed = won_trades + lost_trades
+    win_rate = (won_trades / closed * 100) if closed > 0 else 0
+    net_ret = ((sim_balance - 1000.0) / 1000.0) * 100
+    
+    res_msg = f"👑 *6 Aylık Çoklu Parite Backtest Raporu*\n\n"
+    res_msg += f"• Bakiye: `${sim_balance:.2f}`\n• Net Kâr: `%{net_ret:+.2f}`\n• Toplam Sinyal: {total_signals}\n• Kazanan: {won_trades} 🟢 | Kaybeden: {lost_trades} 🔴\n• Genel Başarı: %{win_rate:.1f}\n\n"
+    res_msg += "📌 *Parite Detayları:*\n" + "\n".join(report_details)
+    return res_msg
 
 def calculate_confidence_score(df_1h, df_4h, is_bullish):
     score = 70
@@ -352,7 +382,7 @@ def advanced_smc_analysis(df_1h, df_4h=None):
     return "Denge", False, 0, 0, 0, 0, 0
 
 def scan_all_markets_manually():
-    send_telegram_message(TELEGRAM_CHAT_ID, "🔍 *Anlık PnL Takipli Tarama Başlatıldı...*")
+    send_telegram_message(TELEGRAM_CHAT_ID, "🔍 *Çoklu Parite ve PnL Takipli Tarama Başlatıldı...*")
     cp, mp = scan_crypto_markets(), scan_traditional_markets()
     update_open_signals({**cp, **mp})
     send_telegram_message(TELEGRAM_CHAT_ID, "✅ *Tarama Tamamlandı!*")
@@ -378,7 +408,7 @@ def scan_crypto_markets():
                 risk_amt = get_current_balance() * 0.02
                 s_units = (risk_amt / abs(entry - sl)) if abs(entry - sl) > 0 else 0
                 fmt = ".4f" if lc < 1 else ".2f"
-                send_telegram_message(TELEGRAM_CHAT_ID, f"🚨 *KRİPTO SİNYAL: {sym}*\n• Fiyat: `{lc:{fmt}}`\n• Strateji: `{analysis}`\n• 🧠 *Yapay Zekâ Güven Skoru:* `%{score}`\n• Giriş: `{entry:{fmt}}` | SL: `{sl:{fmt}}` | TP: `{tp1:{fmt}}`\n• Boyut: `{s_units:.4f} adet`")
+                send_telegram_message(TELEGRAM_CHAT_ID, f"🚨 *KRİPTO SİNYAL: {sym}*\n• Fiyat: `{lc:{fmt}}`\n• Strateji: `{analysis}`\n• 🧠 *Güven Skoru:* `%{score}`\n• Giriş: `{entry:{fmt}}` | SL: `{sl:{fmt}}` | TP: `{tp1:{fmt}}`\n• Boyut: `{s_units:.4f} adet`")
                 log_new_signal(sym, analysis, entry, sl, tp1, tp2, score)
             time.sleep(0.5)
         except Exception as e: print(e)
@@ -398,7 +428,7 @@ def scan_traditional_markets():
     for name, ticker in assets.items():
         try:
             data_1h = yf.download(ticker, period="10d", interval="1h", progress=False)
-            data_4h = yf.download(ticker, period="1.mo", interval="4h", progress=False) if hasattr(yf, 'download') else pd.DataFrame()
+            data_4h = yf.download(ticker, period="1mo", interval="4h", progress=False) if hasattr(yf, 'download') else pd.DataFrame()
             
             if data_1h.empty or len(data_1h) < 50: continue
             
@@ -411,7 +441,7 @@ def scan_traditional_markets():
                 risk_amt = get_current_balance() * 0.02
                 s_units = (risk_amt / abs(entry - sl)) if abs(entry - sl) > 0 else 0
                 fmt = ".4f" if lc < 1 else ".2f"
-                send_telegram_message(TELEGRAM_CHAT_ID, f"📈 *PİYASA SİNYAL: {name}*\n• Fiyat: `{lc:{fmt}}`\n• Strateji: `{analysis}`\n• 🧠 *Yapay Zekâ Güven Skoru:* `%{score}`\n• Giriş: `{entry:{fmt}}` | SL: `{sl:{fmt}}` | TP: `{tp1:{fmt}}`\n• Boyut: `{s_units:.2f} adet`")
+                send_telegram_message(TELEGRAM_CHAT_ID, f"📈 *PİYASA SİNYAL: {name}*\n• Fiyat: `{lc:{fmt}}`\n• Strateji: `{analysis}`\n• 🧠 *Güven Skoru:* `%{score}`\n• Giriş: `{entry:{fmt}}` | SL: `{sl:{fmt}}` | TP: `{tp1:{fmt}}`\n• Boyut: `{s_units:.2f} adet`")
                 log_new_signal(name, analysis, entry, sl, tp1, tp2, score)
             time.sleep(0.5)
         except Exception as e: print(e)
@@ -436,7 +466,7 @@ def telegram_listener():
                     msg_obj = r.get("message", {})
                     chat_id, text = msg_obj.get("chat", {}).get("id"), msg_obj.get("text", "").strip()
                     if text.startswith("/start"):
-                        send_telegram_message(chat_id, "🤖 *Anlık PnL Takipli Hedge Fund Bot Aktif!*\n\nKomutlar:\n• `/istatistik` -> Bakiye ve başarı\n• `/grafik` -> Equity Curve\n• `/durum` -> Açık pozisyonlar ve PnL\n• `/gecmis` -> Geçmiş işlemler\n• `/tara` -> Manuel tara\n• `/backtest` -> 1000$ simülasjon")
+                        send_telegram_message(chat_id, "🤖 *Hedge Fund Terminali Aktif!*\n\nKomutlar:\n• `/istatistik` -> Bakiye ve başarı\n• `/grafik` -> Equity Curve\n• `/durum` -> Açık pozisyonlar ve PnL\n• `/gecmis` -> Geçmiş işlemler\n• `/tara` -> Manuel tara\n• `/backtest` -> 6 Aylık Çoklu Parite Testi")
                     elif text.startswith("/istatistik"): send_telegram_message(chat_id, get_performance_stats())
                     elif text.startswith("/grafik"):
                         send_telegram_message(chat_id, "📈 Grafik hazırlanıyor...")
@@ -445,8 +475,9 @@ def telegram_listener():
                     elif text.startswith("/gecmis"): send_telegram_message(chat_id, get_past_signals_text())
                     elif text.startswith("/tara"): threading.Thread(target=scan_all_markets_manually, daemon=True).start()
                     elif text.startswith("/backtest"):
-                        send_telegram_message(chat_id, "⏳ Backtest çalışıyor...")
-                        send_telegram_message(chat_id, run_backtest_simulation())
+                        send_signal_msg = send_telegram_message(chat_id, "⏳ 6 Aylık Çoklu Parite (BTC, ETH, Altın, EURUSD) Backtesti çalışıyor...")
+                        result_report = run_multi_asset_backtest()
+                        send_telegram_message(chat_id, result_report)
         except Exception as e: print(e)
         time.sleep(2)
 
