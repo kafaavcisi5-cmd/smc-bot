@@ -1,6 +1,7 @@
 ccxt
-requests
-pandas
 yfinance
-matplotlib
-Flask
+pandas
+numpy
+python-telegram-bot
+SQLAlchemy
+psycopg2-binary
