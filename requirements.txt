@@ -1,8 +1,7 @@
+python-telegram-bot
+supabase
 ccxt
 yfinance
 pandas
 numpy
-python-telegram-bot
-SQLAlchemy
-psycopg
-psycopg2-binary
+flask
