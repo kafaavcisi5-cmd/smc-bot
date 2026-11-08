@@ -403,4 +403,55 @@ def scan_traditional_markets():
             if data_1h.empty or len(data_1h) < 50: continue
             
             df_1h = pd.DataFrame({'open': data_1h['Open'].values.flatten(), 'high': data_1h['High'].values.flatten(), 'low': data_1h['Low'].values.flatten(), 'close': data_1h['Close'].values.flatten(), 'volume': data_1h['Volume'].values.flatten() if 'Volume' in data_1h else 0})
-            df_4h = pd.DataFrame({'open': data_4h['Open'].values.flatten(), 'high': data_4h['High'].values.flatten(), 'low': data_4h
+            df_4h = pd.DataFrame({'open': data_4h['Open'].values.flatten(), 'high': data_4h['High'].values.flatten(), 'low': data_4h['Low'].values.flatten(), 'close': data_4h['Close'].values.flatten(), 'volume': data_4h['Volume'].values.flatten() if 'Volume' in data_4h else 0}) if not data_4h.empty else None
+
+            lc, prices[name] = float(df_1h['close'].iloc[-1]), float(df_1h['close'].iloc[-1])
+            analysis, is_fvg, entry, sl, tp1, tp2, score = advanced_smc_analysis(df_1h, df_4h)
+            if is_fvg:
+                risk_amt = get_current_balance() * 0.02
+                s_units = (risk_amt / abs(entry - sl)) if abs(entry - sl) > 0 else 0
+                fmt = ".4f" if lc < 1 else ".2f"
+                send_telegram_message(TELEGRAM_CHAT_ID, f"📈 *PİYASA SİNYAL: {name}*\n• Fiyat: `{lc:{fmt}}`\n• Strateji: `{analysis}`\n• 🧠 *Yapay Zekâ Güven Skoru:* `%{score}`\n• Giriş: `{entry:{fmt}}` | SL: `{sl:{fmt}}` | TP: `{tp1:{fmt}}`\n• Boyut: `{s_units:.2f} adet`")
+                log_new_signal(name, analysis, entry, sl, tp1, tp2, score)
+            time.sleep(0.5)
+        except Exception as e: print(e)
+    return prices
+
+def bot_loop():
+    time.sleep(15)
+    while True:
+        try:
+            update_open_signals({**scan_crypto_markets(), **scan_traditional_markets()})
+        except Exception as e: print(e)
+        time.sleep(600)
+
+def telegram_listener():
+    offset = 0
+    while True:
+        try:
+            res = requests.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates?offset={offset}&timeout=30", timeout=35).json()
+            if res.get("ok"):
+                for r in res.get("result", []):
+                    offset = r["update_id"] + 1
+                    msg_obj = r.get("message", {})
+                    chat_id, text = msg_obj.get("chat", {}).get("id"), msg_obj.get("text", "").strip()
+                    if text.startswith("/start"):
+                        send_telegram_message(chat_id, "🤖 *Anlık PnL Takipli Hedge Fund Bot Aktif!*\n\nKomutlar:\n• `/istatistik` -> Bakiye ve başarı\n• `/grafik` -> Equity Curve\n• `/durum` -> Açık pozisyonlar ve PnL\n• `/gecmis` -> Geçmiş işlemler\n• `/tara` -> Manuel tara\n• `/backtest` -> 1000$ simülasjon")
+                    elif text.startswith("/istatistik"): send_telegram_message(chat_id, get_performance_stats())
+                    elif text.startswith("/grafik"):
+                        send_telegram_message(chat_id, "📈 Grafik hazırlanıyor...")
+                        send_telegram_photo(chat_id, get_equity_curve_chart(), "📊 *Bakiye Eğrisi*")
+                    elif text.startswith("/durum") or text.startswith("/aktif"): send_telegram_message(chat_id, get_active_signals_text())
+                    elif text.startswith("/gecmis"): send_telegram_message(chat_id, get_past_signals_text())
+                    elif text.startswith("/tara"): threading.Thread(target=scan_all_markets_manually, daemon=True).start()
+                    elif text.startswith("/backtest"):
+                        send_telegram_message(chat_id, "⏳ Backtest çalışıyor...")
+                        send_telegram_message(chat_id, run_backtest_simulation())
+        except Exception as e: print(e)
+        time.sleep(2)
+
+threading.Thread(target=telegram_listener, daemon=True).start()
+threading.Thread(target=bot_loop, daemon=True).start()
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
