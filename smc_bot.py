@@ -50,6 +50,11 @@ def save_signals(signals):
 
 def log_new_signal(symbol, fvg_type, entry, sl, tp1, tp2):
     signals = load_signals()
+    # Aynı paritede açık sinyal varsa tekrar ekleme
+    for s in signals:
+        if s["symbol"] == symbol and s["status"] == "Açık":
+            return
+            
     new_sig = {
         "id": len(signals) + 1,
         "symbol": symbol,
@@ -58,16 +63,13 @@ def log_new_signal(symbol, fvg_type, entry, sl, tp1, tp2):
         "sl": sl,
         "tp1": tp1,
         "tp2": tp2,
-        "status": "Açık", # Açık, Kazandı, Kaybetti
+        "status": "Açık",
         "date": datetime.now().strftime("%Y-%m-%d %H:%M")
     }
     signals.append(new_sig)
     save_signals(signals)
 
 def update_open_signals(current_prices):
-    """
-    Açık sinyallerin güncel fiyatla TP veya SL'ye ulaşıp ulaşmadığını kontrol eder.
-    """
     signals = load_signals()
     updated = False
     
@@ -87,7 +89,7 @@ def update_open_signals(current_prices):
                         sig["status"] = "Kaybetti (SL)"
                         updated = True
                         send_telegram_message(TELEGRAM_CHAT_ID, f"🛑 *Stop-Loss Patladı!*\nParite: `{sym}`\nDurum: Kaybetti (SL: {sig['sl']:.4f})")
-                else: # Ayı
+                else:
                     if price <= sig["tp1"]:
                         sig["status"] = "Kazandı (TP1)"
                         updated = True
@@ -110,13 +112,13 @@ def get_performance_stats():
     lost = sum(1 for s in signals if "Kaybetti" in s["status"])
     active = sum(1 for s in signals if s["status"] == "Açık")
     
-_   closed = won + lost
+    closed = won + lost
     win_rate = (won / closed * 100) if closed > 0 else 0
     
     stats_msg = (
         f"📊 *Bot Performans ve Başarı İstatistiği*\n\n"
         f"• Toplam Sinyal: `{total}`\n"
-        f"• Sonuçlanan: `{closed}`\n"
+        f"• Sonuçlanan İşlem: `{closed}`\n"
         f"• Açık Sinyaller: `{active}`\n"
         f"• Kazanan (TP): `{won}` 🟢\n"
         f"• Kaybeden (SL): `{lost}` 🔴\n"
@@ -179,45 +181,42 @@ def advanced_smc_analysis(df, timeframe):
 def scan_crypto_markets():
     exchange = ccxt.binance()
     symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
-    timeframes = ['1h']
     current_prices = {}
     
     for symbol in symbols:
-        for tf in timeframes:
-            try:
-                ohlcv = exchange.fetch_ohlcv(symbol, tf, limit=50)
-                df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                
-                last_close = float(df['close'].iloc[-1])
-                prev_close = float(df['close'].iloc[-2])
-                change = ((last_close - prev_close) / prev_close) * 100
-                current_prices[symbol] = last_close
-                
-                analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df, tf)
-                
-                msg = (
-                    f"🚀 *Pro Kripto Sinyal ({tf})*\n\n"
-                    f"📊 *Parite:* `{symbol}`\n"
-                    f"💲 *Fiyat:* `{last_close}`\n"
-                    f"📈 *Değişim:* `%{change:.2f}`\n"
-                    f"🧠 *Analiz:* `{analysis}`\n"
+        try:
+            ohlcv = exchange.fetch_ohlcv(symbol, '1h', limit=50)
+            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            
+            last_close = float(df['close'].iloc[-1])
+            prev_close = float(df['close'].iloc[-2])
+            change = ((last_close - prev_close) / prev_close) * 100
+            current_prices[symbol] = last_close
+            
+            analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df, '1h')
+            
+            msg = (
+                f"🚀 *Pro Kripto Sinyal*\n\n"
+                f"📊 *Parite:* `{symbol}`\n"
+                f"💲 *Fiyat:* `{last_close}`\n"
+                f"📈 *Değişim:* `%{change:.2f}`\n"
+                f"🧠 *Analiz:* `{analysis}`\n"
+            )
+            
+            if is_fvg:
+                msg += (
+                    f"\n🎯 *İşlem Seviyeleri (R:R):*\n"
+                    f"• Giriş: `{entry:.4f}`\n"
+                    f"• Stop-Loss (SL): `{sl:.4f}`\n"
+                    f"• Hedef 1 (TP1): `{tp1:.4f}`\n"
+                    f"• Hedef 2 (TP2): `{tp2:.4f}`"
                 )
-                
-                if is_fvg:
-                    msg += (
-                        f"\n🎯 *İşlem Seviyeleri (R:R):*\n"
-                        f"• Giriş: `{entry:.4f}`\n"
-                        f"• Stop-Loss (SL): `{sl:.4f}`\n"
-                        f"• Hedef 1 (TP1 - 1:2): `{tp1:.4f}`\n"
-                        f"• Hedef 2 (TP2 - 1:3): `{tp2:.4f}`"
-                    )
-                    # Sinyali otomatik logla
-                    log_new_signal(symbol, analysis, entry, sl, tp1, tp2)
-                
-                send_telegram_message(TELEGRAM_CHAT_ID, msg)
-                time.sleep(2)
-            except Exception as e:
-                print(f"Kripto hata ({symbol}): {e}")
+                log_new_signal(symbol, analysis, entry, sl, tp1, tp2)
+            
+            send_telegram_message(TELEGRAM_CHAT_ID, msg)
+            time.sleep(2)
+        except Exception as e:
+            print(f"Kripto hata ({symbol}): {e}")
                 
     return current_prices
 
@@ -283,11 +282,10 @@ def bot_loop():
         crypto_prices = scan_crypto_markets()
         market_prices = scan_traditional_markets()
         
-        # Tüm güncel fiyatları birleştir ve açık sinyalleri test et
         all_prices = {**crypto_prices, **market_prices}
         update_open_signals(all_prices)
         
-        print("--- Tarama ve Performans Güncellemesi Tamamlandı ---")
+        print("--- Tarama ve Performans Güncellemesi Tamamlandı ---
         time.sleep(600)
 
 def telegram_listener():
@@ -320,4 +318,3 @@ threading.Thread(target=bot_loop, daemon=True).start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
-    
