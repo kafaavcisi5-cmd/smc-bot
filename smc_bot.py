@@ -367,4 +367,146 @@ def run_backtest_simulation():
         net_ret = ((sim_balance - 1000.0) / 1000.0) * 100
         
         return (
-            f"👑 *
+            "👑 *Sanal Bakiye Simülasyon Raporu (BTC)*\n\n"
+            f"• Başlangıç Bakiyesi: `$1000.00`\n"
+            f"• Simüle Edilen Bakiye: `${sim_balance:.2f}`\n"
+            f"• Net Kâr/Zarar: `%{net_ret:+.2f}`\n\n"
+            f"• Taranan Mum: `{len(df)} adet`\n"
+            f"• Toplam Sinyal: `{total_signals}` | Sonuçlanan: `{closed_trades}`\n"
+            f"• Kazanan (TP): `{won_trades}` 🟢 | Kaybeden (SL): `{lost_trades}` 🔴\n"
+            f"🏆 *Gerçekçi Başarı Oranı:* `%{win_rate:.1f}`"
+        )
+    except Exception as e:
+        return f"Backtest hatası: {e}"
+
+def advanced_smc_analysis(df, timeframe):
+    if len(df) < 50:
+        return "Yetersiz Veri", False, 0, 0, 0, 0
+
+    df['sma50'] = df['close'].rolling(50).mean()
+    
+    high_low = df['high'] - df['low']
+    high_close = abs(df['high'] - df['close'].shift())
+    low_close = abs(df['low'] - df['close'].shift())
+    df['atr'] = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1).rolling(14).mean()
+
+    current_close = float(df['close'].iloc[-1])
+    sma_val = float(df['sma50'].iloc[-1])
+    atr = float(df['atr'].iloc[-1]) if not pd.isna(df['atr'].iloc[-1]) else current_close * 0.01
+
+    fvg_signal = "Denge Bölgesi"
+    is_valid_fvg = False
+    
+    if (float(df['low'].iloc[-1]) > float(df['high'].iloc[-3])) and (current_close > sma_val):
+        fvg_signal = "🟢 Boğa FVG (ATR Onaylı)"
+        is_valid_fvg = True
+    elif (float(df['high'].iloc[-1]) < float(df['low'].iloc[-3])) and (current_close < sma_val):
+        fvg_signal = "🔴 Ayı FVG (ATR Onaylı)"
+        is_valid_fvg = True
+
+    entry = current_close
+    if "Boğa" in fvg_signal:
+        sl = entry - (1.5 * atr)
+        risk = entry - sl
+        tp1 = entry + (2.5 * risk)
+        tp2 = entry + (3.5 * risk)
+    elif "Ayı" in fvg_signal:
+        sl = entry + (1.5 * atr)
+        risk = sl - entry
+        tp1 = entry - (2.5 * risk)
+        tp2 = entry - (3.5 * risk)
+    else:
+        sl, tp1, tp2 = 0, 0, 0
+
+    return fvg_signal, is_valid_fvg, entry, sl, tp1, tp2
+
+def scan_all_markets_manually():
+    send_telegram_message(TELEGRAM_CHAT_ID, "🔍 *Manuel Piyasa Taraması Başlatıldı...*")
+    crypto_prices = scan_crypto_markets()
+    market_prices = scan_traditional_markets()
+    all_prices = {**crypto_prices, **market_prices}
+    update_open_signals(all_prices)
+    send_telegram_message(TELEGRAM_CHAT_ID, "✅ *Manuel Tarama Tamamlandı!* Yeni fırsatlar kontrol edildi.")
+
+def scan_crypto_markets():
+    exchange = ccxt.binance()
+    symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
+    current_prices = {}
+    
+    for symbol in symbols:
+        try:
+            ohlcv = exchange.fetch_ohlcv(symbol, '1h', limit=100)
+            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            
+            last_close = float(df['close'].iloc[-1])
+            prev_close = float(df['close'].iloc[-2])
+            change = ((last_close - prev_close) / prev_close) * 100
+            current_prices[symbol] = last_close
+            
+            analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df, '1h')
+            
+            if is_fvg:
+                current_bal = get_current_balance()
+                risk_amt = current_bal * 0.02
+                risk_per_unit = abs(entry - sl)
+                suggested_units = (risk_amt / risk_per_unit) if risk_per_unit > 0 else 0
+                
+                msg = (
+                    f"🚨 *PRO KRİPTO SİNYAL*\n\n"
+                    f"• Varlık: `{symbol}`\n"
+                    f"• Fiyat: `{last_close}`\n"
+                    f"• Değişim: `%{change:.2f}`\n"
+                    f"• Strateji: `{analysis}`\n\n"
+                    f"🎯 *İşlem Seviyeleri:*\n"
+                    f"• Giriş: `{entry:.4f}`\n"
+                    f"• Stop-Loss (SL): `{sl:.4f}`\n"
+                    f"• Hedef 1 (TP1): `{tp1:.4f}`\n\n"
+                    f"🛡️ *Risk Asistanı (%2 Risk = ${risk_amt:.2f}):*\n"
+                    f"• Önerilen Boyut: `{suggested_units:.4f} adet`"
+                )
+                log_new_signal(symbol, analysis, entry, sl, tp1, tp2)
+                send_telegram_message(TELEGRAM_CHAT_ID, msg)
+            
+            time.sleep(2)
+        except Exception as e:
+            print(f"Kripto hata ({symbol}): {e}")
+                
+    return current_prices
+
+def scan_traditional_markets():
+    assets = {
+        "BIST: THYAO": "THYAO.IS",
+        "BIST: EREGL": "EREGL.IS",
+        "Forex: EUR/USD": "EURUSD=X",
+        "Emtia: Altın (XAUUSD)": "GC=F"
+    }
+    current_prices = {}
+    
+    for name, ticker in assets.items():
+        try:
+            data = yf.download(ticker, period="10d", interval="1h", progress=False)
+            if data.empty or len(data) < 50:
+                continue
+                
+            df = pd.DataFrame({
+                'open': data['Open'].values.flatten(),
+                'high': data['High'].values.flatten(),
+                'low': data['Low'].values.flatten(),
+                'close': data['Close'].values.flatten(),
+                'volume': data['Volume'].values.flatten() if 'Volume' in data else 0
+            })
+            
+            last_close = float(df['close'].iloc[-1])
+            prev_close = float(df['close'].iloc[-2])
+            change = ((last_close - prev_close) / prev_close) * 100
+            current_prices[name] = last_close
+            
+            analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df, "1h")
+            
+            if is_fvg:
+                current_bal = get_current_balance()
+                risk_amt = current_bal * 0.02
+                risk_per_unit = abs(entry - sl)
+                suggested_units = (risk_amt / risk_per_unit) if risk_per_unit > 0 else 0
+                
+                msg 
