@@ -12,7 +12,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "SMC Bot 7/24 Aktif ve Çalışıyor!"
+    return "SMC Bot Aktif!"
 
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -46,7 +46,7 @@ def check_smc_signals():
             f"🚨 *SMC / Piyasa Alarmı!* 🚨\n\n"
             f"📊 *Parite:* `{symbol}`\n"
             f"⏱ *Zaman Dilimi:* `{timeframe}`\n"
-            f"💡 *Durum:* Render Web Service Aktif!\n"
+            f"💡 *Durum:* Bot başarıyla çalıştı!\n"
             f"💲 *Güncel Fiyat:* `{last_close}`\n"
             f"📈 *Değişim:* `%{price_change:.2f}`"
         )
@@ -57,13 +57,13 @@ def check_smc_signals():
         print(f"Veri çekme hatası: {e}")
 
 def bot_loop():
-    time.sleep(5)
+    time.sleep(3)
     check_smc_signals()
     while True:
-        time.sleep(300) # Her 5 dakikada bir tarama
+        time.sleep(300) # Her 5 dakikada bir
         check_smc_signals()
 
-# Arka plan iş parçacığını başlatıyoruz
+# Arka plan iş parçacığını doğrudan başlatıyoruz
 threading.Thread(target=bot_loop, daemon=True).start()
 
 if __name__ == "__main__":
