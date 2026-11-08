@@ -23,7 +23,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Sanal Bakiye ve Grafik Destekli SMC Bot Kesintisiz Çalışıyor!"
+    return "Sanal Bakiye ve Grafik Destekli SMC Bot Kesintisiz Calisiyor!"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -51,7 +51,6 @@ def init_db():
     cursor.execute("SELECT balance FROM account WHERE id = 1")
     if not cursor.fetchone():
         cursor.execute("INSERT INTO account (id, balance) VALUES (1, 1000.0)")
-        
     conn.commit()
     conn.close()
 
@@ -68,7 +67,7 @@ def send_telegram_message(chat_id, message):
         response = requests.post(url, json=payload, timeout=10)
         return response.json()
     except Exception as e:
-        print(f"Telegram bağlantı hatası: {e}")
+        print(f"Telegram baglanti hatasi: {e}")
 
 def send_telegram_photo(chat_id, photo_bytes, caption):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
@@ -77,7 +76,7 @@ def send_telegram_photo(chat_id, photo_bytes, caption):
     try:
         requests.post(url, data=data, files=files, timeout=15)
     except Exception as e:
-        print(f"Telegram fotoğraf gönderme hatası: {e}")
+        print(f"Telegram fotograf gonderme hatasi: {e}")
 
 def get_current_balance():
     conn = sqlite3.connect(DB_FILE)
@@ -101,8 +100,7 @@ def update_balance(amount_change):
 def log_new_signal(symbol, fvg_type, entry, sl, tp1, tp2):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    
-    cursor.execute("SELECT id FROM signals WHERE symbol = ? AND status = 'Açık'", (symbol,))
+    cursor.execute("SELECT id FROM signals WHERE symbol = ? AND status = 'Acik'", (symbol,))
     if cursor.fetchone():
         conn.close()
         return
@@ -113,7 +111,7 @@ def log_new_signal(symbol, fvg_type, entry, sl, tp1, tp2):
     
     cursor.execute('''
         INSERT INTO signals (symbol, type, entry, sl, tp1, tp2, status, risk_amount, date)
-        VALUES (?, ?, ?, ?, ?, ?, 'Açık', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, 'Acik', ?, ?)
     ''', (symbol, fvg_type, entry, sl, tp1, tp2, risk_amount, date_str))
     conn.commit()
     conn.close()
@@ -121,7 +119,7 @@ def log_new_signal(symbol, fvg_type, entry, sl, tp1, tp2):
 def update_open_signals(current_prices):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, symbol, type, sl, tp1, risk_amount FROM signals WHERE status = 'Açık'")
+    cursor.execute("SELECT id, symbol, type, sl, tp1, risk_amount FROM signals WHERE status = 'Acik'")
     open_sigs = cursor.fetchall()
     
     updated = False
@@ -129,33 +127,33 @@ def update_open_signals(current_prices):
         sig_id, sym, sig_type, sl, tp1, risk_amount = sig
         if sym in current_prices:
             price = current_prices[sym]
-            is_bullish = "Boğa" in sig_type
+            is_bullish = "Boga" in sig_type or "Boğa" in sig_type
             
             if is_bullish:
                 if price >= tp1:
                     profit = risk_amount * 2.5
                     new_bal = update_balance(profit)
-                    cursor.execute("UPDATE signals SET status = 'Kazandı (TP1)' WHERE id = ?", (sig_id,))
-                    send_telegram_message(TELEGRAM_CHAT_ID, f"🎯 *HEDEF BAŞARIYLA ULAŞILDI!*\n\n• Varlık: `{sym}`\n• Durum: Kazandı 🟢\n• Net Kâr: `+${profit:.2f}`\n• Güncel Bakiye: `${new_bal:.2f}`")
+                    cursor.execute("UPDATE signals SET status = 'Kazandi (TP1)' WHERE id = ?", (sig_id,))
+                    send_telegram_message(TELEGRAM_CHAT_ID, f"🎯 *HEDEF BASARIYLA ULASILDI!*\n\n• Varlik: `{sym}`\n• Durum: Kazandi 🟢\n• Net Kar: `+${profit:.2f}`\n• Guncel Bakiye: `${new_bal:.2f}`")
                     updated = True
                 elif price <= sl:
                     loss = risk_amount
                     new_bal = update_balance(-loss)
                     cursor.execute("UPDATE signals SET status = 'Kaybetti (SL)' WHERE id = ?", (sig_id,))
-                    send_telegram_message(TELEGRAM_CHAT_ID, f"🛑 *STOP-LOSS PATLADI!*\n\n• Varlık: `{sym}`\n• Durum: Kaybetti 🔴\n• Zarar: `-${loss:.2f}`\n• Güncel Bakiye: `${new_bal:.2f}`")
+                    send_telegram_message(TELEGRAM_CHAT_ID, f"🛑 *STOP-LOSS PATLADI!*\n\n• Varlik: `{sym}`\n• Durum: Kaybetti 🔴\n• Zarar: `-${loss:.2f}`\n• Guncel Bakiye: `${new_bal:.2f}`")
                     updated = True
             else:
                 if price <= tp1:
                     profit = risk_amount * 2.5
                     new_bal = update_balance(profit)
-                    cursor.execute("UPDATE signals SET status = 'Kazandı (TP1)' WHERE id = ?", (sig_id,))
-                    send_telegram_message(TELEGRAM_CHAT_ID, f"🎯 *HEDEF BAŞARIYLA ULAŞILDI!*\n\n• Varlık: `{sym}`\n• Durum: Kazandı 🟢\n• Net Kâr: `+${profit:.2f}`\n• Güncel Bakiye: `${new_bal:.2f}`")
+                    cursor.execute("UPDATE signals SET status = 'Kazandi (TP1)' WHERE id = ?", (sig_id,))
+                    send_telegram_message(TELEGRAM_CHAT_ID, f"🎯 *HEDEF BASARIYLA ULASILDI!*\n\n• Varlik: `{sym}`\n• Durum: Kazandi 🟢\n• Net Kar: `+${profit:.2f}`\n• Guncel Bakiye: `${new_bal:.2f}`")
                     updated = True
                 elif price >= sl:
                     loss = risk_amount
                     new_bal = update_balance(-loss)
                     cursor.execute("UPDATE signals SET status = 'Kaybetti (SL)' WHERE id = ?", (sig_id,))
-                    send_telegram_message(TELEGRAM_CHAT_ID, f"🛑 *STOP-LOSS PATLADI!*\n\n• Varlık: `{sym}`\n• Durum: Kaybetti 🔴\n• Zarar: `-${loss:.2f}`\n• Güncel Bakiye: `${new_bal:.2f}`")
+                    send_telegram_message(TELEGRAM_CHAT_ID, f"🛑 *STOP-LOSS PATLADI!*\n\n• Varlik: `{sym}`\n• Durum: Kaybetti 🔴\n• Zarar: `-${loss:.2f}`\n• Guncel Bakiye: `${new_bal:.2f}`")
                     updated = True
                     
     if updated:
@@ -165,27 +163,25 @@ def update_open_signals(current_prices):
 def get_equity_curve_chart():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT date, status, risk_amount FROM signals WHERE status LIKE '%Kazandı%' OR status LIKE '%Kaybetti%' ORDER BY id ASC")
+    cursor.execute("SELECT date, status, risk_amount FROM signals WHERE status LIKE '%Kazandi%' OR status LIKE '%Kaybetti%' ORDER BY id ASC")
     rows = cursor.fetchall()
     conn.close()
     
     balances = [1000.0]
-    dates = ["Başlangıç"]
     current_b = 1000.0
     
     for r in rows:
         d, status, risk = r
-        if "Kazandı" in status:
+        if "Kazandi" in status:
             current_b += (risk * 2.5)
         else:
             current_b -= risk
         balances.append(current_b)
-        dates.append(d.split()[0])
         
     plt.figure(figsize=(8, 4))
     plt.plot(balances, marker='o', color='#2ecc71' if balances[-1] >= 1000 else '#e74c3c', linewidth=2)
-    plt.title("Sanal Portföy Bakiye Eğrisi (Equity Curve)", fontsize=12, fontweight='bold', color='white')
-    plt.xlabel("İşlem Sırası", color='white')
+    plt.title("Sanal Portfoy Bakiye Egrisi (Equity Curve)", fontsize=12, fontweight='bold', color='white')
+    plt.xlabel("Islem Sirasi", color='white')
     plt.ylabel("Bakiye ($)", color='white')
     plt.grid(True, linestyle='--', alpha=0.3)
     
@@ -203,17 +199,17 @@ def get_equity_curve_chart():
 def get_active_signals_text():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT symbol, type, entry, sl, tp1, date FROM signals WHERE status = 'Açık'")
+    cursor.execute("SELECT symbol, type, entry, sl, tp1, date FROM signals WHERE status = 'Acik'")
     rows = cursor.fetchall()
     conn.close()
     
     if not rows:
-        return "📂 *Aktif Pozisyon Durumu*\n\nŞu an açık (takip edilen) aktif sinyal bulunmuyor."
+        return "📂 *Aktif Pozisyon Durumu*\n\nSu an acik (takip edilen) aktif sinyal bulunmuyor."
         
-    msg = "📂 *Şu An Açık Olan Pozisyonlar:*\n\n"
+    msg = "📂 *Su An Acik Olan Pozisyonlar:*\n\n"
     for r in rows:
         sym, stype, entry, sl, tp1, date = r
-        msg += f"• **{sym}** (`{stype}`)\n  - Giriş: `{entry}`\n  - Stop: `{sl}` | Hedef: `{tp1}`\n  - Tarih: `{date}`\n\n"
+        msg += f"• **{sym}** (`{stype}`)\n  - Giris: `{entry}`\n  - Stop: `{sl}` | Hedef: `{tp1}`\n  - Tarih: `{date}`\n\n"
     return msg
 
 def get_performance_stats():
@@ -227,15 +223,15 @@ def get_performance_stats():
     
     if total == 0:
         conn.close()
-        return f"📊 *Bot Performans ve Bakiye Raporu*\n\n• Başlangıç Bakiyesi: `$1000.00`\n• Güncel Bakiye: `${current_bal:.2f}`\n• Net Kâr/Zarar: `%{net_profit_pct:.2f}`\n\nHenüz kaydedilmiş işlem bulunmuyor."
+        return f"📊 *Bot Performans ve Bakiye Raporu*\n\n• Baslangic Bakiyesi: `$1000.00`\n• Guncel Bakiye: `${current_bal:.2f}`\n• Net Kar/Zarar: `%{net_profit_pct:.2f}`\n\nHenuz kaydedilmis islem bulunmuyor."
         
-    cursor.execute("SELECT COUNT(*) FROM signals WHERE status LIKE '%Kazandı%'")
+    cursor.execute("SELECT COUNT(*) FROM signals WHERE status LIKE '%Kazandi%'")
     won = cursor.fetchone()[0]
     
     cursor.execute("SELECT COUNT(*) FROM signals WHERE status LIKE '%Kaybetti%'")
     lost = cursor.fetchone()[0]
     
-    cursor.execute("SELECT COUNT(*) FROM signals WHERE status = 'Açık'")
+    cursor.execute("SELECT COUNT(*) FROM signals WHERE status = 'Acik'")
     active = cursor.fetchone()[0]
     
     conn.close()
@@ -246,21 +242,21 @@ def get_performance_stats():
     return (
         f"📊 *Bot Performans ve Bakiye Raporu*\n\n"
         f"💰 *Sermaye Durumu:*\n"
-        f"• Başlangıç: `$1000.00`\n"
-        f"• Güncel Bakiye: `${current_bal:.2f}`\n"
-        f"• Net Kâr/Zarar: `%{net_profit_pct:+.2f}`\n\n"
-        f"📈 *İşlem İstatistikleri:*\n"
+        f"• Baslangic: `$1000.00`\n"
+        f"• Guncel Bakiye: `${current_bal:.2f}`\n"
+        f"• Net Kar/Zarar: `%{net_profit_pct:+.2f}`\n\n"
+        f"📈 *Islem Istatistikleri:*\n"
         f"• Toplam Sinyal: `{total}`\n"
-        f"• Sonuçlanan: `{closed}` | Açık: `{active}`\n"
+        f"• Sonuclanan: `{closed}` | Acik: `{active}`\n"
         f"• Kazanan (TP): `{won}` 🟢 | Kaybeden (SL): `{lost}` 🔴\n"
-        f"🏆 *Başarı Oranı (Win Rate):* `%{win_rate:.1f}`"
+        f"🏆 *Basari Orani (Win Rate):* `%{win_rate:.1f}`"
     )
 
 def run_backtest_simulation():
     try:
         data = yf.download("BTC-USD", period="1mo", interval="1h", progress=False)
         if data.empty or len(data) < 60:
-            return "Backtest için yeterli veri alınamadı."
+            return "Backtest icin yeterli veri alinamadi."
 
         df = pd.DataFrame({
             'open': data['Open'].values.flatten(),
@@ -298,7 +294,7 @@ def run_backtest_simulation():
             
             if is_bullish_fvg or is_bearish_fvg:
                 total_signals += 1
-                trade_result = "Açık"
+                trade_result = "Acik"
                 risk_amt = sim_balance * 0.02
                 
                 if is_bullish_fvg:
@@ -322,7 +318,7 @@ def run_backtest_simulation():
                     for j in range(i, min(i + 35, len(df))):
                         future_row = df.iloc[j]
                         if float(future_row['high']) >= tp1:
-                            trade_result = "Kazandı"
+                            trade_result = "Kazandi"
                             break
                         elif float(future_row['low']) <= sl:
                             trade_result = "Kaybetti"
@@ -349,13 +345,13 @@ def run_backtest_simulation():
                     for j in range(i, min(i + 35, len(df))):
                         future_row = df.iloc[j]
                         if float(future_row['low']) <= tp1:
-                            trade_result = "Kazandı"
+                            trade_result = "Kazandi"
                             break
                         elif float(future_row['high']) >= sl:
                             trade_result = "Kaybetti"
                             break
 
-                if trade_result == "Kazandı":
+                if trade_result == "Kazandi":
                     won_trades += 1
                     sim_balance += (risk_amt * 2.5)
                 elif trade_result == "Kaybetti":
@@ -367,17 +363,17 @@ def run_backtest_simulation():
         net_ret = ((sim_balance - 1000.0) / 1000.0) * 100
         
         return (
-            "👑 *Sanal Bakiye Simülasyon Raporu (BTC)*\n\n"
-            f"• Başlangıç Bakiyesi: `$1000.00`\n"
-            f"• Simüle Edilen Bakiye: `${sim_balance:.2f}`\n"
-            f"• Net Kâr/Zarar: `%{net_ret:+.2f}`\n\n"
+            "👑 *Sanal Bakiye Simulasyon Raporu (BTC)*\n\n"
+            f"• Baslangic Bakiyesi: `$1000.00`\n"
+            f"• Simule Edilen Bakiye: `${sim_balance:.2f}`\n"
+            f"• Net Kar/Zarar: `%{net_ret:+.2f}`\n\n"
             f"• Taranan Mum: `{len(df)} adet`\n"
-            f"• Toplam Sinyal: `{total_signals}` | Sonuçlanan: `{closed_trades}`\n"
+            f"• Toplam Sinyal: `{total_signals}` | Sonuclanan: `{closed_trades}`\n"
             f"• Kazanan (TP): `{won_trades}` 🟢 | Kaybeden (SL): `{lost_trades}` 🔴\n"
-            f"🏆 *Gerçekçi Başarı Oranı:* `%{win_rate:.1f}`"
+            f"🏆 *Gercekci Basari Orani:* `%{win_rate:.1f}`"
         )
     except Exception as e:
-        return f"Backtest hatası: {e}"
+        return f"Backtest hatasi: {e}"
 
 def advanced_smc_analysis(df, timeframe):
     if len(df) < 50:
@@ -394,23 +390,23 @@ def advanced_smc_analysis(df, timeframe):
     sma_val = float(df['sma50'].iloc[-1])
     atr = float(df['atr'].iloc[-1]) if not pd.isna(df['atr'].iloc[-1]) else current_close * 0.01
 
-    fvg_signal = "Denge Bölgesi"
+    fvg_signal = "Denge Bolgesi"
     is_valid_fvg = False
     
     if (float(df['low'].iloc[-1]) > float(df['high'].iloc[-3])) and (current_close > sma_val):
-        fvg_signal = "🟢 Boğa FVG (ATR Onaylı)"
+        fvg_signal = "🟢 Boga FVG (ATR Onayli)"
         is_valid_fvg = True
     elif (float(df['high'].iloc[-1]) < float(df['low'].iloc[-3])) and (current_close < sma_val):
-        fvg_signal = "🔴 Ayı FVG (ATR Onaylı)"
+        fvg_signal = "🔴 Ayi FVG (ATR Onayli)"
         is_valid_fvg = True
 
     entry = current_close
-    if "Boğa" in fvg_signal:
+    if is_valid_fvg and "Boga" in fvg_signal:
         sl = entry - (1.5 * atr)
         risk = entry - sl
         tp1 = entry + (2.5 * risk)
         tp2 = entry + (3.5 * risk)
-    elif "Ayı" in fvg_signal:
+    elif is_valid_fvg and "Ayi" in fvg_signal:
         sl = entry + (1.5 * atr)
         risk = sl - entry
         tp1 = entry - (2.5 * risk)
@@ -421,12 +417,12 @@ def advanced_smc_analysis(df, timeframe):
     return fvg_signal, is_valid_fvg, entry, sl, tp1, tp2
 
 def scan_all_markets_manually():
-    send_telegram_message(TELEGRAM_CHAT_ID, "🔍 *Manuel Piyasa Taraması Başlatıldı...*")
+    send_telegram_message(TELEGRAM_CHAT_ID, "🔍 *Manuel Piyasa Taramasi Baslatildi...*")
     crypto_prices = scan_crypto_markets()
     market_prices = scan_traditional_markets()
     all_prices = {**crypto_prices, **market_prices}
     update_open_signals(all_prices)
-    send_telegram_message(TELEGRAM_CHAT_ID, "✅ *Manuel Tarama Tamamlandı!* Yeni fırsatlar kontrol edildi.")
+    send_telegram_message(TELEGRAM_CHAT_ID, "✅ *Manuel Tarama Tamamlandi!* Yeni firsatlar kontrol edildi.")
 
 def scan_crypto_markets():
     exchange = ccxt.binance()
@@ -452,17 +448,17 @@ def scan_crypto_markets():
                 suggested_units = (risk_amt / risk_per_unit) if risk_per_unit > 0 else 0
                 
                 msg = (
-                    f"🚨 *PRO KRİPTO SİNYAL*\n\n"
-                    f"• Varlık: `{symbol}`\n"
+                    f"🚨 *PRO KRIPTO SINYAL*\n\n"
+                    f"• Varlik: `{symbol}`\n"
                     f"• Fiyat: `{last_close}`\n"
-                    f"• Değişim: `%{change:.2f}`\n"
+                    f"• Degisim: `%{change:.2f}`\n"
                     f"• Strateji: `{analysis}`\n\n"
-                    f"🎯 *İşlem Seviyeleri:*\n"
-                    f"• Giriş: `{entry:.4f}`\n"
+                    f"🎯 *Islem Seviyeleri:*\n"
+                    f"• Giris: `{entry:.4f}`\n"
                     f"• Stop-Loss (SL): `{sl:.4f}`\n"
                     f"• Hedef 1 (TP1): `{tp1:.4f}`\n\n"
-                    f"🛡️ *Risk Asistanı (%2 Risk = ${risk_amt:.2f}):*\n"
-                    f"• Önerilen Boyut: `{suggested_units:.4f} adet`"
+                    f"🛡️ *Risk Asistani (%2 Risk = ${risk_amt:.2f}):*\n"
+                    f"• Onerilen Boyut: `{suggested_units:.4f} adet`"
                 )
                 log_new_signal(symbol, analysis, entry, sl, tp1, tp2)
                 send_telegram_message(TELEGRAM_CHAT_ID, msg)
@@ -478,7 +474,7 @@ def scan_traditional_markets():
         "BIST: THYAO": "THYAO.IS",
         "BIST: EREGL": "EREGL.IS",
         "Forex: EUR/USD": "EURUSD=X",
-        "Emtia: Altın (XAUUSD)": "GC=F"
+        "Emtia: Altin (XAUUSD)": "GC=F"
     }
     current_prices = {}
     
@@ -509,4 +505,5 @@ def scan_traditional_markets():
                 risk_per_unit = abs(entry - sl)
                 suggested_units = (risk_amt / risk_per_unit) if risk_per_unit > 0 else 0
                 
-                msg 
+                msg = (
+               
