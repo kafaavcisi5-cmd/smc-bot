@@ -11,7 +11,10 @@ from flask import Flask
 
 TELEGRAM_BOT_TOKEN = "9147785620:AAGDSk6n_dppdsFt0xsGKlnoD8rCHfp3rdo"
 TELEGRAM_CHAT_ID = "1709473407"
-LOG_FILE = "signals_log.json"
+
+# Render ortamında dosya yolunu garantiye alalım
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_FILE = os.path.join(BASE_DIR, "signals_log.json")
 
 app = Flask(__name__)
 
@@ -38,7 +41,8 @@ def load_signals():
     try:
         with open(LOG_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
+    except Exception as e:
+        print(f"Log okuma hatası: {e}")
         return []
 
 def save_signals(signals):
@@ -105,7 +109,7 @@ def get_performance_stats():
     signals = load_signals()
     total = len(signals)
     if total == 0:
-        return "Henüz kaydedilmiş sinyal yok."
+        return "📊 *Bot Performans İstatistiği*\n\nHenüz kaydedilmiş bir sinyal bulunmuyor. Sinyal üretildikten sonra istatistikler burada görünecektir."
         
     won = sum(1 for s in signals if "Kazandı" in s["status"])
     lost = sum(1 for s in signals if "Kaybetti" in s["status"])
@@ -300,11 +304,12 @@ def telegram_listener():
                     offset = result["update_id"] + 1
                     message = result.get("message", {})
                     chat_id = message.get("chat", {}).get("id")
-                    text = message.get("text", "")
+                    text = message.get("text", "").strip()
                     
-                    if text == "/start":
+                    # Komutları .startswith kullanarak esnek hale getirdik (örn: /istatistik@bot_adi)
+                    if text.startswith("/start"):
                         send_telegram_message(chat_id, "🤖 Performans Takipli Pro SMC Bot aktif! İstatistikler için /istatistik yazabilirsiniz.")
-                    elif text == "/istatistik":
+                    elif text.startswith("/istatistik"):
                         stats = get_performance_stats()
                         send_telegram_message(chat_id, stats)
         except Exception as e:
