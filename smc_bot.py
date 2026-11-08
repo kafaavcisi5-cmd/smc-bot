@@ -5,15 +5,10 @@ import time
 import threading
 from flask import Flask
 
-# Telegram Bot Ayarları
 TELEGRAM_BOT_TOKEN = "9147785620:AAGDSk6n_dppdsFt0xsGKlnoD8rCHfp3rdo"
 TELEGRAM_CHAT_ID = "1709473407"
 
 app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "SMC Bot Aktif ve Çalışıyor!"
 
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -41,37 +36,36 @@ def check_smc_signals():
         
         last_close = df['close'].iloc[-1]
         prev_close = df['close'].iloc[-2]
-        
         price_change = ((last_close - prev_close) / prev_close) * 100
         
-        if abs(price_change) > 0.0:  # Test için
-            signal_msg = (
-                f"🚨 *SMC / Piyasa Alarmı!* 🚨\n\n"
-                f"📊 *Parite:* `{symbol}`\n"
-                f"⏱ *Zaman Dilimi:* `{timeframe}`\n"
-                f"💡 *Durum:* Test sinyali / Fiyat hareketi tetiklendi!\n"
-                f"💲 *Güncel Fiyat:* `{last_close}`\n"
-                f"📈 *Değişim:* `%{price_change:.2f}`"
-            )
-            send_telegram_message(signal_msg)
-            print("Sinyal Telegram'a gönderildi.")
-        else:
-            print("Koşul sağlanmadı.")
+        signal_msg = (
+            f"🚨 *SMC / Piyasa Alarmı!* 🚨\n\n"
+            f"📊 *Parite:* `{symbol}`\n"
+            f"⏱ *Zaman Dilimi:* `{timeframe}`\n"
+            f"💡 *Durum:* Bot aktif ve tarama yapıyor!\n"
+            f"💲 *Güncel Fiyat:* `{last_close}`\n"
+            f"📈 *Değişim:* `%{price_change:.2f}`"
+        )
+        send_telegram_message(signal_msg)
+        print("Sinyal Telegram'a gönderildi.")
             
     except Exception as e:
         print(f"Veri çekme hatası: {e}")
 
 def bot_loop():
+    time.sleep(3)
+    check_smc_signals()
     while True:
+        time.sleep(300)
         check_smc_signals()
-        time.sleep(300) # Her 5 dakikada bir tarama yapar
+
+# Gunicorn başlar başlamaz arka plan döngüsünü tetikler
+threading.Thread(target=bot_loop, daemon=True).start()
+
+@app.route('/')
+def home():
+    return "SMC Bot Aktif ve Çalışıyor!"
 
 if __name__ == "__main__":
-    # Bot döngüsünü arka planda (thread olarak) başlatıyoruz
-    t = threading.Thread(target=bot_loop)
-    t.daemon = True
-    t.start()
-    
-    # Render port gereksinimi için Flask sunucusunu başlatıyoruz
     app.run(host='0.0.0.0', port=10000)
     
