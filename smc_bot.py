@@ -5,16 +5,19 @@ import yfinance as yf
 import time
 import threading
 import os
+import json
+from datetime import datetime
 from flask import Flask
 
 TELEGRAM_BOT_TOKEN = "9147785620:AAGDSk6n_dppdsFt0xsGKlnoD8rCHfp3rdo"
 TELEGRAM_CHAT_ID = "1709473407"
+LOG_FILE = "signals_log.json"
 
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Pro R&R ve Zaman Dilimli SMC Bot Aktif!"
+    return "Pro Performans Takipli SMC Bot Aktif!"
 
 def send_telegram_message(chat_id, message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -29,38 +32,124 @@ def send_telegram_message(chat_id, message):
     except Exception as e:
         print(f"Telegram bağlantı hatası: {e}")
 
+def load_signals():
+    if not os.path.exists(LOG_FILE):
+        return []
+    try:
+        with open(LOG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return []
+
+def save_signals(signals):
+    try:
+        with open(LOG_FILE, "w", encoding="utf-8") as f:
+            json.dump(signals, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"Log kayıt hatası: {e}")
+
+def log_new_signal(symbol, fvg_type, entry, sl, tp1, tp2):
+    signals = load_signals()
+    new_sig = {
+        "id": len(signals) + 1,
+        "symbol": symbol,
+        "type": fvg_type,
+        "entry": entry,
+        "sl": sl,
+        "tp1": tp1,
+        "tp2": tp2,
+        "status": "Açık", # Açık, Kazandı, Kaybetti
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M")
+    }
+    signals.append(new_sig)
+    save_signals(signals)
+
+def update_open_signals(current_prices):
+    """
+    Açık sinyallerin güncel fiyatla TP veya SL'ye ulaşıp ulaşmadığını kontrol eder.
+    """
+    signals = load_signals()
+    updated = False
+    
+    for sig in signals:
+        if sig["status"] == "Açık":
+            sym = sig["symbol"]
+            if sym in current_prices:
+                price = current_prices[sym]
+                is_bullish = "Boğa" in sig["type"]
+                
+                if is_bullish:
+                    if price >= sig["tp1"]:
+                        sig["status"] = "Kazandı (TP1)"
+                        updated = True
+                        send_telegram_message(TELEGRAM_CHAT_ID, f"🎯 *Hedef Başarıyla Ulaşıldı!*\nParite: `{sym}`\nDurum: Kazandı (TP1: {sig['tp1']:.4f})")
+                    elif price <= sig["sl"]:
+                        sig["status"] = "Kaybetti (SL)"
+                        updated = True
+                        send_telegram_message(TELEGRAM_CHAT_ID, f"🛑 *Stop-Loss Patladı!*\nParite: `{sym}`\nDurum: Kaybetti (SL: {sig['sl']:.4f})")
+                else: # Ayı
+                    if price <= sig["tp1"]:
+                        sig["status"] = "Kazandı (TP1)"
+                        updated = True
+                        send_telegram_message(TELEGRAM_CHAT_ID, f"🎯 *Hedef Başarıyla Ulaşıldı!*\nParite: `{sym}`\nDurum: Kazandı (TP1: {sig['tp1']:.4f})")
+                    elif price >= sig["sl"]:
+                        sig["status"] = "Kaybetti (SL)"
+                        updated = True
+                        send_telegram_message(TELEGRAM_CHAT_ID, f"🛑 *Stop-Loss Patladı!*\nParite: `{sym}`\nDurum: Kaybetti (SL: {sig['sl']:.4f})")
+                        
+    if updated:
+        save_signals(signals)
+
+def get_performance_stats():
+    signals = load_signals()
+    total = len(signals)
+    if total == 0:
+        return "Henüz kaydedilmiş sinyal yok."
+        
+    won = sum(1 for s in signals if "Kazandı" in s["status"])
+    lost = sum(1 for s in signals if "Kaybetti" in s["status"])
+    active = sum(1 for s in signals if s["status"] == "Açık")
+    
+_   closed = won + lost
+    win_rate = (won / closed * 100) if closed > 0 else 0
+    
+    stats_msg = (
+        f"📊 *Bot Performans ve Başarı İstatistiği*\n\n"
+        f"• Toplam Sinyal: `{total}`\n"
+        f"• Sonuçlanan: `{closed}`\n"
+        f"• Açık Sinyaller: `{active}`\n"
+        f"• Kazanan (TP): `{won}` 🟢\n"
+        f"• Kaybeden (SL): `{lost}` 🔴\n"
+        f"🏆 *Başarı Oranı (Win Rate):* `%{win_rate:.1f}`"
+    )
+    return stats_msg
+
 def calculate_risk_reward(df, fvg_type, current_price):
-    """
-    Otomatik Stop-Loss, Take-Profit ve Risk/Ödül (R:R 1:2 / 1:3) Hesaplama
-    """
     recent_low = df['low'].iloc[-5:-1].min()
     recent_high = df['high'].iloc[-5:-1].max()
     
     if "Boğa" in fvg_type:
         entry = current_price
-        stop_loss = recent_low - (recent_low * 0.002) # Güvenlik payı ile dip seviye
+        stop_loss = recent_low - (recent_low * 0.002)
         risk = entry - stop_loss
         if risk <= 0: risk = entry * 0.01
-        tp1 = entry + (risk * 2) # 1:2 R:R
-        tp2 = entry + (risk * 3) # 1:3 R:R
+        tp1 = entry + (risk * 2)
+        tp2 = entry + (risk * 3)
         return entry, stop_loss, tp1, tp2
-        
     elif "Ayı" in fvg_type:
         entry = current_price
-        stop_loss = recent_high + (recent_high * 0.002) # Güvenlik payı ile tepe seviye
+        stop_loss = recent_high + (recent_high * 0.002)
         risk = stop_loss - entry
         if risk <= 0: risk = entry * 0.01
-        tp1 = entry - (risk * 2) # 1:2 R:R
-        tp2 = entry - (risk * 3) # 1:3 R:R
+        tp1 = entry - (risk * 2)
+        tp2 = entry - (risk * 3)
         return entry, stop_loss, tp1, tp2
-        
     return current_price, 0, 0, 0
 
 def advanced_smc_analysis(df, timeframe):
     if len(df) < 25:
         return "Yetersiz Veri", False, 0, 0, 0, 0
 
-    # Hacim Filtresi
     if 'volume' in df.columns:
         avg_volume = df['volume'].iloc[-21:-1].mean()
         current_volume = df['volume'].iloc[-1]
@@ -68,7 +157,6 @@ def advanced_smc_analysis(df, timeframe):
     else:
         is_high_volume = True
 
-    # FVG Tespiti
     fvg_signal = "Denge Bölgesi"
     is_valid_fvg = False
     
@@ -91,22 +179,22 @@ def advanced_smc_analysis(df, timeframe):
 def scan_crypto_markets():
     exchange = ccxt.binance()
     symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
-    timeframes = ['1h', '4h'] # Çoklu zaman dilimi taraması
+    timeframes = ['1h']
+    current_prices = {}
     
     for symbol in symbols:
         for tf in timeframes:
             try:
-                print(f"Kripto taranıyor: {symbol} [{tf}]")
                 ohlcv = exchange.fetch_ohlcv(symbol, tf, limit=50)
                 df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                 
-                last_close = df['close'].iloc[-1]
-                prev_close = df['close'].iloc[-2]
+                last_close = float(df['close'].iloc[-1])
+                prev_close = float(df['close'].iloc[-2])
                 change = ((last_close - prev_close) / prev_close) * 100
+                current_prices[symbol] = last_close
                 
                 analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df, tf)
                 
-                # Sadece FVG veya önemli yapı yakalandığında detaylı R:R raporu gönder
                 msg = (
                     f"🚀 *Pro Kripto Sinyal ({tf})*\n\n"
                     f"📊 *Parite:* `{symbol}`\n"
@@ -123,11 +211,15 @@ def scan_crypto_markets():
                         f"• Hedef 1 (TP1 - 1:2): `{tp1:.4f}`\n"
                         f"• Hedef 2 (TP2 - 1:3): `{tp2:.4f}`"
                     )
+                    # Sinyali otomatik logla
+                    log_new_signal(symbol, analysis, entry, sl, tp1, tp2)
                 
                 send_telegram_message(TELEGRAM_CHAT_ID, msg)
                 time.sleep(2)
             except Exception as e:
-                print(f"Kripto hata ({symbol} - {tf}): {e}")
+                print(f"Kripto hata ({symbol}): {e}")
+                
+    return current_prices
 
 def scan_traditional_markets():
     assets = {
@@ -136,12 +228,11 @@ def scan_traditional_markets():
         "Forex: EUR/USD": "EURUSD=X",
         "Emtia: Altın (XAUUSD)": "GC=F"
     }
+    current_prices = {}
     
     for name, ticker in assets.items():
         try:
-            print(f"Geleneksel piyasa taranıyor: {name}")
             data = yf.download(ticker, period="5d", interval="1h", progress=False)
-            
             if data.empty or len(data) < 25:
                 continue
                 
@@ -156,6 +247,7 @@ def scan_traditional_markets():
             last_close = float(df['close'].iloc[-1])
             prev_close = float(df['close'].iloc[-2])
             change = ((last_close - prev_close) / prev_close) * 100
+            current_prices[name] = last_close
             
             analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df, "1h")
             
@@ -175,19 +267,27 @@ def scan_traditional_markets():
                     f"• Hedef 1 (TP1): `{tp1:.2f}`\n"
                     f"• Hedef 2 (TP2): `{tp2:.2f}`"
                 )
+                log_new_signal(name, analysis, entry, sl, tp1, tp2)
             
             send_telegram_message(TELEGRAM_CHAT_ID, msg)
             time.sleep(2)
         except Exception as e:
             print(f"Piyasa hata ({name}): {e}")
+            
+    return current_prices
 
 def bot_loop():
     time.sleep(10)
     while True:
-        print("--- Çoklu Zaman Dilimli ve R:R Taraması Başlatıldı ---")
-        scan_crypto_markets()
-        scan_traditional_markets()
-        print("--- Tarama Tamamlandı ---")
+        print("--- Performans Takipli Tarama Başlatıldı ---")
+        crypto_prices = scan_crypto_markets()
+        market_prices = scan_traditional_markets()
+        
+        # Tüm güncel fiyatları birleştir ve açık sinyalleri test et
+        all_prices = {**crypto_prices, **market_prices}
+        update_open_signals(all_prices)
+        
+        print("--- Tarama ve Performans Güncellemesi Tamamlandı ---")
         time.sleep(600)
 
 def telegram_listener():
@@ -206,7 +306,10 @@ def telegram_listener():
                     text = message.get("text", "")
                     
                     if text == "/start":
-                        send_telegram_message(chat_id, "🤖 Pro R&R ve Zaman Dilimli SMC Bot aktif!")
+                        send_telegram_message(chat_id, "🤖 Performans Takipli Pro SMC Bot aktif! İstatistikler için /istatistik yazabilirsiniz.")
+                    elif text == "/istatistik":
+                        stats = get_performance_stats()
+                        send_telegram_message(chat_id, stats)
         except Exception as e:
             print(f"Dinleme hatası: {e}")
         time.sleep(2)
@@ -217,4 +320,4 @@ threading.Thread(target=bot_loop, daemon=True).start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
-            
+    
