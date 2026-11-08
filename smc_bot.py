@@ -23,7 +23,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Ultra Genişletilmiş SMC Bot Aktif!"
+    return "Geçmiş Komutlu Trend Filtreli SMC Bot Aktif!"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -175,6 +175,21 @@ def get_active_signals_text():
         msg += f"• **{sym}** (`{stype}`)\n  - Giriş: `{entry}` | Stop: `{sl}` | Hedef: `{tp1}`\n\n"
     return msg
 
+def get_past_signals_text():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT symbol, type, entry, status, date FROM signals WHERE status != 'Acik' ORDER BY id DESC LIMIT 10")
+    rows = cursor.fetchall()
+    conn.close()
+    if not rows:
+        return "📂 *Geçmiş İşlem Yok*\n\nHenüz sonuçlanmış bir işlem bulunmuyor."
+    msg = "📂 *Son Sonuçlanan 10 İşlem:*\n\n"
+    for r in rows:
+        sym, stype, entry, status, date = r
+        emoji = "🟢" if "Kazandi" in status or "Kazandı" in status else "🔴"
+        msg += f"• **{sym}** (`{stype}`)\n  - Giriş: `{entry}` | Durum: {emoji} `{status}`\n  - Tarih: `{date}`\n\n"
+    return msg
+
 def get_performance_stats():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -248,27 +263,47 @@ def run_backtest_simulation():
     except Exception as e:
         return f"Backtest hatası: {e}"
 
-def advanced_smc_analysis(df):
-    if len(df) < 50: return "Yetersiz", False, 0, 0, 0, 0
-    df['sma50'] = df['close'].rolling(50).mean()
-    high_low, high_close, low_close = df['high'] - df['low'], abs(df['high'] - df['close'].shift()), abs(df['low'] - df['close'].shift())
-    df['atr'] = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1).rolling(14).mean()
-    cc, sma, atr = float(df['close'].iloc[-1]), float(df['sma50'].iloc[-1]), float(df['atr'].iloc[-1]) if not pd.isna(df['atr'].iloc[-1]) else float(df['close'].iloc[-1]) * 0.01
-    if float(df['low'].iloc[-1]) > float(df['high'].iloc[-3]) and cc > sma:
+def advanced_smc_analysis(df_1h, df_4h=None):
+    if len(df_1h) < 50: return "Yetersiz", False, 0, 0, 0, 0
+    
+    if df_4h is not None and len(df_4h) >= 20:
+        sma_4h = df_4h['close'].rolling(20).mean().iloc[-1]
+        close_4h = df_4h['close'].iloc[-1]
+        trend_4h_bullish = close_4h > sma_4h
+    else:
+        trend_4h_bullish = None
+
+    df_1h['sma50'] = df_1h['close'].rolling(50).mean()
+    high_low, high_close, low_close = df_1h['high'] - df_1h['low'], abs(df_1h['high'] - df_1h['close'].shift()), abs(df_1h['low'] - df_1h['close'].shift())
+    df_1h['atr'] = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1).rolling(14).mean()
+    cc, sma, atr = float(df_1h['close'].iloc[-1]), float(df_1h['sma50'].iloc[-1]), float(df_1h['atr'].iloc[-1]) if not pd.isna(df_1h['atr'].iloc[-1]) else float(df_1h['close'].iloc[-1]) * 0.01
+    
+    vol_ok = True
+    if 'volume' in df_1h.columns and len(df_1h) >= 20:
+        avg_vol = df_1h['volume'].rolling(20).mean().iloc[-1]
+        curr_vol = df_1h['volume'].iloc[-1]
+        if not pd.isna(avg_vol) and avg_vol > 0:
+            vol_ok = curr_vol >= (avg_vol * 0.8)
+
+    if float(df_1h['low'].iloc[-1]) > float(df_1h['high'].iloc[-3]) and cc > sma and vol_ok:
+        if trend_4h_bullish is False:
+            return "Denge", False, 0, 0, 0, 0
         return "🟢 Boğa FVG", True, cc, cc - (1.5 * atr), cc + (2.5 * (1.5 * atr)), cc + (3.5 * (1.5 * atr))
-    elif float(df['high'].iloc[-1]) < float(df['low'].iloc[-3]) and cc < sma:
+    elif float(df_1h['high'].iloc[-1]) < float(df_1h['low'].iloc[-3]) and cc < sma and vol_ok:
+        if trend_4h_bullish is True:
+            return "Denge", False, 0, 0, 0, 0
         return "🔴 Ayı FVG", True, cc, cc + (1.5 * atr), cc - (2.5 * (1.5 * atr)), cc - (3.5 * (1.5 * atr))
+        
     return "Denge", False, 0, 0, 0, 0
 
 def scan_all_markets_manually():
-    send_telegram_message(TELEGRAM_CHAT_ID, "🔍 *Kapsamlı Tüm Piyasalar Taranıyor...*")
+    send_telegram_message(TELEGRAM_CHAT_ID, "🔍 *Trend Filtreli Kapsamlı Tarama Başlatıldı...*")
     cp, mp = scan_crypto_markets(), scan_traditional_markets()
     update_open_signals({**cp, **mp})
-    send_telegram_message(TELEGRAM_CHAT_ID, "✅ *Tüm Piyasalar Taraması Tamamlandı!*")
+    send_telegram_message(TELEGRAM_CHAT_ID, "✅ *Tarama Tamamlandı!*")
 
 def scan_crypto_markets():
     ex = ccxt.binance()
-    # Binance üzerindeki en popüler ve likit altcoin + majör kriptolar
     symbols = [
         'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT', 
         'ADA/USDT', 'AVAX/USDT', 'DOGE/USDT', 'DOT/USDT', 'MATIC/USDT', 
@@ -278,56 +313,47 @@ def scan_crypto_markets():
     prices = {}
     for sym in symbols:
         try:
-            df = pd.DataFrame(ex.fetch_ohlcv(sym, '1h', limit=100), columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            lc, prices[sym] = float(df['close'].iloc[-1]), float(df['close'].iloc[-1])
-            analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df)
+            df_1h = pd.DataFrame(ex.fetch_ohlcv(sym, '1h', limit=100), columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df_4h = pd.DataFrame(ex.fetch_ohlcv(sym, '4h', limit=50), columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            
+            lc, prices[sym] = float(df_1h['close'].iloc[-1]), float(df_1h['close'].iloc[-1])
+            analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df_1h, df_4h)
             if is_fvg:
                 risk_amt = get_current_balance() * 0.02
                 s_units = (risk_amt / abs(entry - sl)) if abs(entry - sl) > 0 else 0
-                send_telegram_message(TELEGRAM_CHAT_ID, f"🚨 *KRİPTO SİNYAL: {sym}*\n• Fiyat: `{lc}`\n• Strateji: `{analysis}`\n• Giriş: `{entry:.4f}` | SL: `{sl:.4f}` | TP: `{tp1:.4f}`\n• Önerilen Boyut: `{s_units:.4f} adet`")
+                send_telegram_message(TELEGRAM_CHAT_ID, f"🚨 *KRİPTO SİNYAL: {sym}*\n• Fiyat: `{lc}`\n• Strateji: `{analysis}` (4h Trend Onaylı)\n• Giriş: `{entry:.4f}` | SL: `{sl:.4f}` | TP: `{tp1:.4f}`\n• Önerilen Boyut: `{s_units:.4f} adet`")
                 log_new_signal(sym, analysis, entry, sl, tp1, tp2)
             time.sleep(0.5)
         except Exception as e: print(e)
     return prices
 
 def scan_traditional_markets():
-    # BIST tüm ana hisseler, Forex majör pariteler ve Emtialar
     assets = {
-        # BIST 30 / Popüler Hisseler
-        "BIST: THYAO": "THYAO.IS",
-        "BIST: EREGL": "EREGL.IS",
-        "BIST: GARAN": "GARAN.IS",
-        "BIST: ASELS": "ASELS.IS",
-        "BIST: AKBNK": "AKBNK.IS",
-        "BIST: KCHOL": "KCHOL.IS",
-        "BIST: SAHOL": "SAHOL.IS",
-        "BIST: TUPRS": "TUPRS.IS",
-        "BIST: BIMAS": "BIMAS.IS",
-        "BIST: YKBNK": "YKBNK.IS",
-        # Forex Majör Pariteler
-        "Forex: EUR/USD": "EURUSD=X",
-        "Forex: GBP/USD": "GBPUSD=X",
-        "Forex: USD/JPY": "USDJPY=X",
-        "Forex: AUD/USD": "AUDUSD=X",
-        "Forex: USD/CHF": "USDCHF=X",
-        "Forex: USD/CAD": "USDCAD=X",
-        # Emtialar ve Kıymetli Madenler
-        "Emtia: Altın (XAUUSD)": "GC=F",
-        "Emtia: Gümüş (XAGUSD)": "SI=F",
+        "BIST: THYAO": "THYAO.IS", "BIST: EREGL": "EREGL.IS", "BIST: GARAN": "GARAN.IS",
+        "BIST: ASELS": "ASELS.IS", "BIST: AKBNK": "AKBNK.IS", "BIST: KCHOL": "KCHOL.IS",
+        "BIST: SAHOL": "SAHOL.IS", "BIST: TUPRS": "TUPRS.IS", "BIST: BIMAS": "BIMAS.IS",
+        "BIST: YKBNK": "YKBNK.IS", "Forex: EUR/USD": "EURUSD=X", "Forex: GBP/USD": "GBPUSD=X",
+        "Forex: USD/JPY": "USDJPY=X", "Forex: AUD/USD": "AUDUSD=X", "Forex: USD/CHF": "USDCHF=X",
+        "Forex: USD/CAD": "USDCAD=X", "Emtia: Altın (XAUUSD)": "GC=F", "Emtia: Gümüş (XAGUSD)": "SI=F",
         "Emtia: Ham Petrol": "CL=F"
     }
     prices = {}
     for name, ticker in assets.items():
         try:
-            data = yf.download(ticker, period="10d", interval="1h", progress=False)
-            if data.empty or len(data) < 50: continue
-            df = pd.DataFrame({'open': data['Open'].values.flatten(), 'high': data['High'].values.flatten(), 'low': data['Low'].values.flatten(), 'close': data['Close'].values.flatten(), 'volume': data['Volume'].values.flatten() if 'Volume' in data else 0})
-            lc, prices[name] = float(df['close'].iloc[-1]), float(df['close'].iloc[-1])
-            analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df)
+            data_1h = yf.download(ticker, period="10d", interval="1h", progress=False)
+            data_4h = yf.download(ticker, period="1mo", interval="4h", progress=False)
+            
+            if data_1h.empty or len(data_1h) < 50: continue
+            
+            df_1h = pd.DataFrame({'open': data_1h['Open'].values.flatten(), 'high': data_1h['High'].values.flatten(), 'low': data_1h['Low'].values.flatten(), 'close': data_1h['Close'].values.flatten(), 'volume': data_1h['Volume'].values.flatten() if 'Volume' in data_1h else 0})
+            df_4h = pd.DataFrame({'open': data_4h['Open'].values.flatten(), 'high': data_4h['High'].values.flatten(), 'low': data_4h['Low'].values.flatten(), 'close': data_4h['Close'].values.flatten(), 'volume': data_4h['Volume'].values.flatten() if 'Volume' in data_4h else 0}) if not data_4h.empty else None
+
+            lc, prices[name] = float(df_1h['close'].iloc[-1]), float(df_1h['close'].iloc[-1])
+            analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df_1h, df_4h)
             if is_fvg:
                 risk_amt = get_current_balance() * 0.02
                 s_units = (risk_amt / abs(entry - sl)) if abs(entry - sl) > 0 else 0
-                send_telegram_message(TELEGRAM_CHAT_ID, f"📈 *PİYASA SİNYAL: {name}*\n• Fiyat: `{lc:.2f}`\n• Strateji: `{analysis}`\n• Giriş: `{entry:.2f}` | SL: `{sl:.2f}` | TP: `{tp1:.2f}`\n• Önerilen Boyut: `{s_units:.2f} adet`")
+                send_telegram_message(TELEGRAM_CHAT_ID, f"📈 *PİYASA SİNYAL: {name}*\n• Fiyat: `{lc:.2f}`\n• Strateji: `{analysis}` (4h Trend Onaylı)\n• Giriş: `{entry:.2f}` | SL: `{sl:.2f}` | TP: `{tp1:.2f}`\n• Önerilen Boyut: `{s_units:.2f} adet`")
                 log_new_signal(name, analysis, entry, sl, tp1, tp2)
             time.sleep(0.5)
         except Exception as e: print(e)
@@ -352,22 +378,5 @@ def telegram_listener():
                     msg_obj = r.get("message", {})
                     chat_id, text = msg_obj.get("chat", {}).get("id"), msg_obj.get("text", "").strip()
                     if text.startswith("/start"):
-                        send_telegram_message(chat_id, "🤖 *Ultra Genişletilmiş Portföy Botu Aktif!*\n\nKomutlar:\n• `/istatistik` -> Bakiye ve başarı\n• `/grafik` -> Equity Curve\n• `/durum` -> Açık pozisyonlar\n• `/tara` -> Manuel tara\n• `/backtest` -> 1000$ simülasyon")
-                    elif text.startswith("/istatistik"): send_telegram_message(chat_id, get_performance_stats())
-                    elif text.startswith("/grafik"):
-                        send_telegram_message(chat_id, "📈 Grafik hazırlanıyor...")
-                        send_telegram_photo(chat_id, get_equity_curve_chart(), "📊 *Bakiye Eğrisi*")
-                    elif text.startswith("/durum") or text.startswith("/aktif"): send_telegram_message(chat_id, get_active_signals_text())
-                    elif text.startswith("/tara"): threading.Thread(target=scan_all_markets_manually, daemon=True).start()
-                    elif text.startswith("/backtest"):
-                        send_telegram_message(chat_id, "⏳ Backtest çalışıyor...")
-                        send_telegram_message(chat_id, run_backtest_simulation())
-        except Exception as e: print(e)
-        time.sleep(2)
-
-threading.Thread(target=telegram_listener, daemon=True).start()
-threading.Thread(target=bot_loop, daemon=True).start()
-
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
-    
+                        send_telegram_message(chat_id, "🤖 *Trend Filtreli Portföy Botu Aktif!*\n\nKomutlar:\n• `/istatistik` -> Bakiye ve başarı\n• `/grafik` -> Equity Curve\n• `/durum` -> Açık pozisyonlar\n• `/gecmis` -> Son sonuçlanan işlemler\n• `/tara` -> Manuel tara\n• `/backtest` -> 1000$ simülasyon")
+                    elif text.startswith("/istatistik"): send_telegram_message(chat_id, get_pe
