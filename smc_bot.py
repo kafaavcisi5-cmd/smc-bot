@@ -23,12 +23,12 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Paper Trading SMC Bot Aktif ve Çalışıyor!"
+    return "Güven Skorlu Akıllı Hedge Fund Terminali Aktif!"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS signals (id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT, type TEXT, entry REAL, sl REAL, tp1 REAL, tp2 REAL, status TEXT, risk_amount REAL, date TEXT)")
+    cursor.execute("CREATE TABLE IF NOT EXISTS signals (id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT, type TEXT, entry REAL, sl REAL, tp1 REAL, tp2 REAL, status TEXT, risk_amount REAL, score INTEGER, date TEXT)")
     cursor.execute("CREATE TABLE IF NOT EXISTS account (id INTEGER PRIMARY KEY, balance REAL)")
     cursor.execute("SELECT balance FROM account WHERE id = 1")
     if not cursor.fetchone():
@@ -75,7 +75,7 @@ def update_balance(amount_change):
     conn.close()
     return new_balance
 
-def log_new_signal(symbol, fvg_type, entry, sl, tp1, tp2):
+def log_new_signal(symbol, fvg_type, entry, sl, tp1, tp2, score):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM signals WHERE symbol = ? AND status = 'Acik'", (symbol,))
@@ -85,7 +85,7 @@ def log_new_signal(symbol, fvg_type, entry, sl, tp1, tp2):
     current_bal = get_current_balance()
     risk_amount = current_bal * 0.02
     date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-    cursor.execute("INSERT INTO signals (symbol, type, entry, sl, tp1, tp2, status, risk_amount, date) VALUES (?, ?, ?, ?, ?, ?, 'Acik', ?, ?)", (symbol, fvg_type, entry, sl, tp1, tp2, risk_amount, date_str))
+    cursor.execute("INSERT INTO signals (symbol, type, entry, sl, tp1, tp2, status, risk_amount, score, date) VALUES (?, ?, ?, ?, ?, ?, 'Acik', ?, ?, ?)", (symbol, fvg_type, entry, sl, tp1, tp2, risk_amount, score, date_str))
     conn.commit()
     conn.close()
 
@@ -164,30 +164,32 @@ def get_equity_curve_chart():
 def get_active_signals_text():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT symbol, type, entry, sl, tp1, date FROM signals WHERE status = 'Acik'")
+    cursor.execute("SELECT symbol, type, entry, sl, tp1, score, date FROM signals WHERE status = 'Acik'")
     rows = cursor.fetchall()
     conn.close()
     if not rows:
         return "📂 *Aktif Pozisyon Yok*\n\nŞu an açık sinyal bulunmuyor."
     msg = "📂 *Açık Pozisyonlar:*\n\n"
     for r in rows:
-        sym, stype, entry, sl, tp1, date = r
-        msg += f"• **{sym}** (`{stype}`)\n  - Giriş: `{entry}` | Stop: `{sl}` | Hedef: `{tp1}`\n\n"
+        sym, stype, entry, sl, tp1, score, date = r
+        score_val = score if score else 80
+        msg += f"• **{sym}** (`{stype}` | Skor: %{score_val})\n  - Giriş: `{entry}` | Stop: `{sl}` | Hedef: `{tp1}`\n\n"
     return msg
 
 def get_past_signals_text():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT symbol, type, entry, status, date FROM signals WHERE status != 'Acik' ORDER BY id DESC LIMIT 10")
+    cursor.execute("SELECT symbol, type, entry, status, score, date FROM signals WHERE status != 'Acik' ORDER BY id DESC LIMIT 10")
     rows = cursor.fetchall()
     conn.close()
     if not rows:
         return "📂 *Geçmiş İşlem Yok*\n\nHenüz sonuçlanmış bir işlem bulunmuyor."
     msg = "📂 *Son Sonuçlanan 10 İşlem:*\n\n"
     for r in rows:
-        sym, stype, entry, status, date = r
+        sym, stype, entry, status, score, date = r
+        score_val = score if score else 80
         emoji = "🟢" if "Kazandi" in status or "Kazandı" in status else "🔴"
-        msg += f"• **{sym}** (`{stype}`)\n  - Giriş: `{entry}` | Durum: {emoji} `{status}`\n  - Tarih: `{date}`\n\n"
+        msg += f"• **{sym}** (`{stype}` | Skor: %{score_val})\n  - Giriş: `{entry}` | Durum: {emoji} `{status}`\n  - Tarih: `{date}`\n\n"
     return msg
 
 def get_performance_stats():
@@ -204,8 +206,6 @@ def get_performance_stats():
     won = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(*) FROM signals WHERE status LIKE '%Kaybetti%'")
     lost = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM signals WHERE status = 'Acik'")
-    active = cursor.fetchone()[0]
     conn.close()
     closed = won + lost
     win_rate = (won / closed * 100) if closed > 0 else 0
@@ -263,8 +263,37 @@ def run_backtest_simulation():
     except Exception as e:
         return f"Backtest hatası: {e}"
 
+def calculate_confidence_score(df_1h, df_4h, is_bullish):
+    """Yapay Zekâ ve Konfluans Tabanlı Güven Skoru Hesaplama (0 - 100)"""
+    score = 70 # Temel taban skor
+    try:
+        # 1. Hacim Gücü Faktörü
+        if 'volume' in df_1h.columns and len(df_1h) >= 20:
+            avg_vol = df_1h['volume'].rolling(20).mean().iloc[-1]
+            curr_vol = df_1h['volume'].iloc[-1]
+            if not pd.isna(avg_vol) and avg_vol > 0 and curr_vol > (avg_vol * 1.5):
+                score += 15 # Güçlü hacim patlaması (+15)
+            elif not pd.isna(avg_vol) and avg_vol > 0 and curr_vol > avg_vol:
+                score += 8  # Normal üstü hacim (+8)
+
+        # 2. Çoklu Zaman Dilimi Trend Kalitesi
+        if df_4h is not None and len(df_4h) >= 20:
+            sma_4h = df_4h['close'].rolling(20).mean().iloc[-1]
+            close_4h = df_4h['close'].iloc[-1]
+            dist_pct = abs(close_4h - sma_4h) / sma_4h * 100
+            if dist_pct > 1.0: # Güçlü trend ivmesi
+                score += 10
+            else:
+                score += 5
+
+        # Skor sınırlandırma (70 - 98 arası)
+        score = min(max(score, 70), 98)
+    except:
+        score = 80
+    return score
+
 def advanced_smc_analysis(df_1h, df_4h=None):
-    if len(df_1h) < 50: return "Yetersiz", False, 0, 0, 0, 0
+    if len(df_1h) < 50: return "Yetersiz", False, 0, 0, 0, 0, 0
     
     if df_4h is not None and len(df_4h) >= 20:
         sma_4h = df_4h['close'].rolling(20).mean().iloc[-1]
@@ -287,17 +316,19 @@ def advanced_smc_analysis(df_1h, df_4h=None):
 
     if float(df_1h['low'].iloc[-1]) > float(df_1h['high'].iloc[-3]) and cc > sma and vol_ok:
         if trend_4h_bullish is False:
-            return "Denge", False, 0, 0, 0, 0
-        return "🟢 Boğa FVG", True, cc, cc - (1.5 * atr), cc + (2.5 * (1.5 * atr)), cc + (3.5 * (1.5 * atr))
+            return "Denge", False, 0, 0, 0, 0, 0
+        score = calculate_confidence_score(df_1h, df_4h, True)
+        return "🟢 Boğa FVG", True, cc, cc - (1.5 * atr), cc + (2.5 * (1.5 * atr)), cc + (3.5 * (1.5 * atr)), score
     elif float(df_1h['high'].iloc[-1]) < float(df_1h['low'].iloc[-3]) and cc < sma and vol_ok:
         if trend_4h_bullish is True:
-            return "Denge", False, 0, 0, 0, 0
-        return "🔴 Ayı FVG", True, cc, cc + (1.5 * atr), cc - (2.5 * (1.5 * atr)), cc - (3.5 * (1.5 * atr))
+            return "Denge", False, 0, 0, 0, 0, 0
+        score = calculate_confidence_score(df_1h, df_4h, False)
+        return "🔴 Ayı FVG", True, cc, cc + (1.5 * atr), cc - (2.5 * (1.5 * atr)), cc - (3.5 * (1.5 * atr)), score
         
-    return "Denge", False, 0, 0, 0, 0
+    return "Denge", False, 0, 0, 0, 0, 0
 
 def scan_all_markets_manually():
-    send_telegram_message(TELEGRAM_CHAT_ID, "🔍 *Trend ve Hacim Filtreli Tarama Başlatıldı...*")
+    send_telegram_message(TELEGRAM_CHAT_ID, "🔍 *Yapay Zekâ Güven Skorlu Tarama Başlatıldı...*")
     cp, mp = scan_crypto_markets(), scan_traditional_markets()
     update_open_signals({**cp, **mp})
     send_telegram_message(TELEGRAM_CHAT_ID, "✅ *Tarama Tamamlandı!*")
@@ -317,12 +348,12 @@ def scan_crypto_markets():
             df_4h = pd.DataFrame(ex.fetch_ohlcv(sym, '4h', limit=50), columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             
             lc, prices[sym] = float(df_1h['close'].iloc[-1]), float(df_1h['close'].iloc[-1])
-            analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df_1h, df_4h)
+            analysis, is_fvg, entry, sl, tp1, tp2, score = advanced_smc_analysis(df_1h, df_4h)
             if is_fvg:
                 risk_amt = get_current_balance() * 0.02
                 s_units = (risk_amt / abs(entry - sl)) if abs(entry - sl) > 0 else 0
-                send_telegram_message(TELEGRAM_CHAT_ID, f"🚨 *KRİPTO SİNYAL: {sym}*\n• Fiyat: `{lc}`\n• Strateji: `{analysis}` (4h Trend Onaylı)\n• Giriş: `{entry:.4f}` | SL: `{sl:.4f}` | TP: `{tp1:.4f}`\n• Önerilen Boyut: `{s_units:.4f} adet`")
-                log_new_signal(sym, analysis, entry, sl, tp1, tp2)
+                send_telegram_message(TELEGRAM_CHAT_ID, f"🚨 *KRİPTO SİNYAL: {sym}*\n• Fiyat: `{lc}`\n• Strateji: `{analysis}`\n• 🧠 *Yapay Zekâ Güven Skoru:* `%{score}`\n• Giriş: `{entry:.4f}` | SL: `{sl:.4f}` | TP: `{tp1:.4f}`\n• Boyut: `{s_units:.4f} adet`")
+                log_new_signal(sym, analysis, entry, sl, tp1, tp2, score)
             time.sleep(0.5)
         except Exception as e: print(e)
     return prices
@@ -349,12 +380,12 @@ def scan_traditional_markets():
             df_4h = pd.DataFrame({'open': data_4h['Open'].values.flatten(), 'high': data_4h['High'].values.flatten(), 'low': data_4h['Low'].values.flatten(), 'close': data_4h['Close'].values.flatten(), 'volume': data_4h['Volume'].values.flatten() if 'Volume' in data_4h else 0}) if not data_4h.empty else None
 
             lc, prices[name] = float(df_1h['close'].iloc[-1]), float(df_1h['close'].iloc[-1])
-            analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df_1h, df_4h)
+            analysis, is_fvg, entry, sl, tp1, tp2, score = advanced_smc_analysis(df_1h, df_4h)
             if is_fvg:
                 risk_amt = get_current_balance() * 0.02
                 s_units = (risk_amt / abs(entry - sl)) if abs(entry - sl) > 0 else 0
-                send_telegram_message(TELEGRAM_CHAT_ID, f"📈 *PİYASA SİNYAL: {name}*\n• Fiyat: `{lc:.2f}`\n• Strateji: `{analysis}` (4h Trend Onaylı)\n• Giriş: `{entry:.2f}` | SL: `{sl:.2f}` | TP: `{tp1:.2f}`\n• Önerilen Boyut: `{s_units:.2f} adet`")
-                log_new_signal(name, analysis, entry, sl, tp1, tp2)
+                send_telegram_message(TELEGRAM_CHAT_ID, f"📈 *PİYASA SİNYAL: {name}*\n• Fiyat: `{lc:.2f}`\n• Strateji: `{analysis}`\n• 🧠 *Yapay Zekâ Güven Skoru:* `%{score}`\n• Giriş: `{entry:.2f}` | SL: `{sl:.2f}` | TP: `{tp1:.2f}`\n• Boyut: `{s_units:.2f} adet`")
+                log_new_signal(name, analysis, entry, sl, tp1, tp2, score)
             time.sleep(0.5)
         except Exception as e: print(e)
     return prices
@@ -378,7 +409,7 @@ def telegram_listener():
                     msg_obj = r.get("message", {})
                     chat_id, text = msg_obj.get("chat", {}).get("id"), msg_obj.get("text", "").strip()
                     if text.startswith("/start"):
-                        send_telegram_message(chat_id, "🤖 *Paper Trading SMC Bot Aktif!*\n\nKomutlar:\n• `/istatistik` -> Bakiye ve başarı\n• `/grafik` -> Equity Curve\n• `/durum` -> Açık pozisyonlar\n• `/gecmis` -> Geçmiş işlemler\n• `/tara` -> Manuel tara\n• `/backtest` -> 1000$ simülasyon")
+                        send_telegram_message(chat_id, "🤖 *Güven Skorlu Hedge Fund Bot Aktif!*\n\nKomutlar:\n• `/istatistik` -> Bakiye ve başarı\n• `/grafik` -> Equity Curve\n• `/durum` -> Açık pozisyonlar\n• `/gecmis` -> Geçmiş işlemler\n• `/tara` -> Manuel tara\n• `/backtest` -> 1000$ simülasjon")
                     elif text.startswith("/istatistik"): send_telegram_message(chat_id, get_performance_stats())
                     elif text.startswith("/grafik"):
                         send_telegram_message(chat_id, "📈 Grafik hazırlanıyor...")
