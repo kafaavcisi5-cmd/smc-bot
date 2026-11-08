@@ -14,7 +14,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Pro SMC & Likidite Botu 7/24 Aktif!"
+    return "Pro R&R ve Zaman Dilimli SMC Bot Aktif!"
 
 def send_telegram_message(chat_id, message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -29,34 +29,44 @@ def send_telegram_message(chat_id, message):
     except Exception as e:
         print(f"Telegram bağlantı hatası: {e}")
 
-def advanced_smc_analysis(df):
+def calculate_risk_reward(df, fvg_type, current_price):
     """
-    1-3 Özellikleri Entegre Edilmiş Gelişmiş SMC Analizi:
-    - Likidite Taraması (Liquidity Sweep)
-    - Hacim Filtresi (Volume SMA)
-    - FVG (Fair Value Gap) Tespiti
+    Otomatik Stop-Loss, Take-Profit ve Risk/Ödül (R:R 1:2 / 1:3) Hesaplama
     """
-    if len(df) < 25:
-        return "Yetersiz Veri", False
+    recent_low = df['low'].iloc[-5:-1].min()
+    recent_high = df['high'].iloc[-5:-1].max()
+    
+    if "Boğa" in fvg_type:
+        entry = current_price
+        stop_loss = recent_low - (recent_low * 0.002) # Güvenlik payı ile dip seviye
+        risk = entry - stop_loss
+        if risk <= 0: risk = entry * 0.01
+        tp1 = entry + (risk * 2) # 1:2 R:R
+        tp2 = entry + (risk * 3) # 1:3 R:R
+        return entry, stop_loss, tp1, tp2
+        
+    elif "Ayı" in fvg_type:
+        entry = current_price
+        stop_loss = recent_high + (recent_high * 0.002) # Güvenlik payı ile tepe seviye
+        risk = stop_loss - entry
+        if risk <= 0: risk = entry * 0.01
+        tp1 = entry - (risk * 2) # 1:2 R:R
+        tp2 = entry - (risk * 3) # 1:3 R:R
+        return entry, stop_loss, tp1, tp2
+        
+    return current_price, 0, 0, 0
 
-    # Hacim Filtresi (Son mum hacmi, son 20 mumun ortalama hacminin üstünde mi?)
+def advanced_smc_analysis(df, timeframe):
+    if len(df) < 25:
+        return "Yetersiz Veri", False, 0, 0, 0, 0
+
+    # Hacim Filtresi
     if 'volume' in df.columns:
         avg_volume = df['volume'].iloc[-21:-1].mean()
         current_volume = df['volume'].iloc[-1]
-        is_high_volume = current_volume > (avg_volume * 1.2)
+        is_high_volume = current_volume > (avg_volume * 1.1)
     else:
-        is_high_volume = True # Hacim verisi olmayan piyasalar için esnetilir
-
-    # Likidite Taraması (Sweep): Fiyat önceki yüksek/düşük seviyeyi kırıp geri döndü mü?
-    prev_high = df['high'].iloc[-5:-1].max()
-    prev_low = df['low'].iloc[-5:-1].min()
-    current_close = df['close'].iloc[-1]
-    
-    sweep_status = "Normal Seyir"
-    if current_close < prev_low:
-        sweep_status = "💧 Satıcı Likiditesi Alındı (Alt Dip Patlatıldı)"
-    elif current_close > prev_high:
-        sweep_status = "⚡ Alıcı Likiditesi Alındı (Üst Tepe Patlatıldı)"
+        is_high_volume = True
 
     # FVG Tespiti
     fvg_signal = "Denge Bölgesi"
@@ -69,44 +79,55 @@ def advanced_smc_analysis(df):
         fvg_signal = "🔴 Ayı FVG (Satış Bölgesi)"
         is_valid_fvg = True
 
-    # Sonuç değerlendirmesi
-    if is_valid_fvg and is_high_volume:
-        analysis_result = f"{fvg_signal} + 📊 Yüksek Hacimli Kurumsal Hareket"
-    elif sweep_status != "Normal Seyir":
-        analysis_result = f"{sweep_status} | {fvg_signal}"
-    else:
-        analysis_result = f"⚖️ {fvg_signal} (Hacim Normal)"
+    current_price = float(df['close'].iloc[-1])
+    entry, sl, tp1, tp2 = calculate_risk_reward(df, fvg_signal, current_price)
 
-    return analysis_result, is_valid_fvg
+    analysis_result = f"{fvg_signal}"
+    if is_high_volume and is_valid_fvg:
+        analysis_result += " + 📊 Yüksek Hacim"
+
+    return analysis_result, is_valid_fvg, entry, sl, tp1, tp2
 
 def scan_crypto_markets():
     exchange = ccxt.binance()
     symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
+    timeframes = ['1h', '4h'] # Çoklu zaman dilimi taraması
     
     for symbol in symbols:
-        try:
-            print(f"Kripto taranıyor: {symbol}")
-            # 1 saatlik ve 4 saatlik yapı simülasyonu için 1h veri çekilir
-            ohlcv = exchange.fetch_ohlcv(symbol, '1h', limit=50)
-            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            
-            last_close = df['close'].iloc[-1]
-            prev_close = df['close'].iloc[-2]
-            change = ((last_close - prev_close) / prev_close) * 100
-            
-            analysis, _ = advanced_smc_analysis(df)
-            
-            msg = (
-                f"🚀 *Pro Kripto SMC Raporu*\n\n"
-                f"📊 *Parite:* `{symbol}`\n"
-                f"💲 *Fiyat:* `{last_close}`\n"
-                f"📈 *Değişim:* `%{change:.2f}`\n"
-                f"🧠 *Gelişmiş Analiz:* `{analysis}`"
-            )
-            send_telegram_message(TELEGRAM_CHAT_ID, msg)
-            time.sleep(2)
-        except Exception as e:
-            print(f"Kripto hata ({symbol}): {e}")
+        for tf in timeframes:
+            try:
+                print(f"Kripto taranıyor: {symbol} [{tf}]")
+                ohlcv = exchange.fetch_ohlcv(symbol, tf, limit=50)
+                df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                
+                last_close = df['close'].iloc[-1]
+                prev_close = df['close'].iloc[-2]
+                change = ((last_close - prev_close) / prev_close) * 100
+                
+                analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df, tf)
+                
+                # Sadece FVG veya önemli yapı yakalandığında detaylı R:R raporu gönder
+                msg = (
+                    f"🚀 *Pro Kripto Sinyal ({tf})*\n\n"
+                    f"📊 *Parite:* `{symbol}`\n"
+                    f"💲 *Fiyat:* `{last_close}`\n"
+                    f"📈 *Değişim:* `%{change:.2f}`\n"
+                    f"🧠 *Analiz:* `{analysis}`\n"
+                )
+                
+                if is_fvg:
+                    msg += (
+                        f"\n🎯 *İşlem Seviyeleri (R:R):*\n"
+                        f"• Giriş: `{entry:.4f}`\n"
+                        f"• Stop-Loss (SL): `{sl:.4f}`\n"
+                        f"• Hedef 1 (TP1 - 1:2): `{tp1:.4f}`\n"
+                        f"• Hedef 2 (TP2 - 1:3): `{tp2:.4f}`"
+                    )
+                
+                send_telegram_message(TELEGRAM_CHAT_ID, msg)
+                time.sleep(2)
+            except Exception as e:
+                print(f"Kripto hata ({symbol} - {tf}): {e}")
 
 def scan_traditional_markets():
     assets = {
@@ -136,15 +157,25 @@ def scan_traditional_markets():
             prev_close = float(df['close'].iloc[-2])
             change = ((last_close - prev_close) / prev_close) * 100
             
-            analysis, _ = advanced_smc_analysis(df)
+            analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df, "1h")
             
             msg = (
-                f"📈 *Pro Piyasa SMC Raporu*\n\n"
+                f"📈 *Pro Piyasa Sinyal*\n\n"
                 f"📊 *Varlık:* `{name}`\n"
                 f"💲 *Fiyat:* `{last_close:.2f}`\n"
                 f"📈 *Değişim:* `%{change:.2f}`\n"
-                f"🧠 *Gelişmiş Analiz:* `{analysis}`"
+                f"🧠 *Analiz:* `{analysis}`\n"
             )
+            
+            if is_fvg:
+                msg += (
+                    f"\n🎯 *İşlem Seviyeleri (R:R):*\n"
+                    f"• Giriş: `{entry:.2f}`\n"
+                    f"• Stop-Loss (SL): `{sl:.2f}`\n"
+                    f"• Hedef 1 (TP1): `{tp1:.2f}`\n"
+                    f"• Hedef 2 (TP2): `{tp2:.2f}`"
+                )
+            
             send_telegram_message(TELEGRAM_CHAT_ID, msg)
             time.sleep(2)
         except Exception as e:
@@ -153,11 +184,11 @@ def scan_traditional_markets():
 def bot_loop():
     time.sleep(10)
     while True:
-        print("--- Gelişmiş Çoklu Piyasa Taraması Başlatıldı ---")
+        print("--- Çoklu Zaman Dilimli ve R:R Taraması Başlatıldı ---")
         scan_crypto_markets()
         scan_traditional_markets()
         print("--- Tarama Tamamlandı ---")
-        time.sleep(600) # 10 dakikada bir tarama
+        time.sleep(600)
 
 def telegram_listener():
     offset = 0
@@ -175,7 +206,7 @@ def telegram_listener():
                     text = message.get("text", "")
                     
                     if text == "/start":
-                        send_telegram_message(chat_id, "🤖 Pro SMC & Likidite Tarama Botu aktif! Gelişmiş analizler iletiliyor.")
+                        send_telegram_message(chat_id, "🤖 Pro R&R ve Zaman Dilimli SMC Bot aktif!")
         except Exception as e:
             print(f"Dinleme hatası: {e}")
         time.sleep(2)
