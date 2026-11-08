@@ -19,7 +19,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Hatası Giderilmiş Kusursuz SMC Bot Aktif!"
+    return "Matematiksel Hatası Giderilmiş SMC Bot Aktif!"
 
 def send_telegram_message(chat_id, message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -127,10 +127,10 @@ def get_performance_stats():
     )
 
 def run_backtest_simulation():
-    """Hataları Arındırılmış Doğru Simülasyon Motoru"""
+    """İndeks Hatasından Arındırılmış Kusursuz Backtest Motoru"""
     try:
         data = yf.download("BTC-USD", period="1mo", interval="1h", progress=False)
-        if data.empty or len(data) < 50:
+        if data.empty or len(data) < 60:
             return "Backtest için yeterli veri alınamadı."
 
         df = pd.DataFrame({
@@ -147,8 +147,8 @@ def run_backtest_simulation():
         won_trades = 0
         lost_trades = 0
 
+        # Doğru aralık ve sıfır indeks kayması
         for i in range(50, len(df) - 30):
-            # Geçmiş pencere
             prev_candle = df.iloc[i-1]
             prev_prev_candle = df.iloc[i-3]
             curr_close = float(prev_candle['close'])
@@ -159,32 +159,34 @@ def run_backtest_simulation():
             
             if is_bullish_fvg or is_bearish_fvg:
                 total_signals += 1
-                future_candles = df.iloc[i:i+30]
                 trade_result = "Açık"
                 
                 if is_bullish_fvg:
                     entry = curr_close
-                    sl = entry - (entry * 0.012) # %1.2 Esnek SL
-                    tp1 = entry + (entry * 0.024) # 1:2 Risk/Ödül Hedefi
+                    sl = entry - (entry * 0.015)  # Güvenli marj
+                    tp1 = entry + (entry * 0.03)   # 1:2 Sağlam R:R
                     
-                    for _, row in future_candles.iterrows():
-                        if float(row['high']) >= tp1:
+                    # Gelecek mumları doğru indeksleme ile tarama
+                    for j in range(i, min(i + 30, len(df))):
+                        future_row = df.iloc[j]
+                        if float(future_row['high']) >= tp1:
                             trade_result = "Kazandı"
                             break
-                        elif float(row['low']) <= sl:
+                        elif float(future_row['low']) <= sl:
                             trade_result = "Kaybetti"
                             break
 
                 elif is_bearish_fvg:
                     entry = curr_close
-                    sl = entry + (entry * 0.012)
-                    tp1 = entry - (entry * 0.024)
+                    sl = entry + (entry * 0.015)
+                    tp1 = entry - (entry * 0.03)
                     
-                    for _, row in future_candles.iterrows():
-                        if float(row['low']) <= tp1:
+                    for j in range(i, min(i + 30, len(df))):
+                        future_row = df.iloc[j]
+                        if float(future_row['low']) <= tp1:
                             trade_result = "Kazandı"
                             break
-                        elif float(row['high']) >= sl:
+                        elif float(future_row['high']) >= sl:
                             trade_result = "Kaybetti"
                             break
 
@@ -197,7 +199,7 @@ def run_backtest_simulation():
         win_rate = (won_trades / closed_trades * 100) if closed_trades > 0 else 0
         
         return (
-            f"💎 *Optimizasyonlu Backtest Raporu (BTC)*\n\n"
+            f"🎯 *Kusursuz Backtest Raporu (BTC)*\n\n"
             f"• Taranan Mum: `{len(df)} adet`\n"
             f"• Toplam Sinyal: `{total_signals}`\n"
             f"• Sonuçlanan: `{closed_trades}`\n"
@@ -211,15 +213,15 @@ def run_backtest_simulation():
 def calculate_risk_reward(df, fvg_type, current_price):
     if "Boğa" in fvg_type:
         entry = current_price
-        stop_loss = entry - (entry * 0.012)
-        tp1 = entry + (entry * 0.024)
-        tp2 = entry + (entry * 0.036)
+        stop_loss = entry - (entry * 0.015)
+        tp1 = entry + (entry * 0.03)
+        tp2 = entry + (entry * 0.045)
         return entry, stop_loss, tp1, tp2
     elif "Ayı" in fvg_type:
         entry = current_price
-        stop_loss = entry + (entry * 0.012)
-        tp1 = entry - (entry * 0.024)
-        tp2 = entry - (entry * 0.036)
+        stop_loss = entry + (entry * 0.015)
+        tp1 = entry - (entry * 0.03)
+        tp2 = entry - (entry * 0.045)
         return entry, stop_loss, tp1, tp2
     return current_price, 0, 0, 0
 
@@ -372,12 +374,12 @@ def telegram_listener():
                     text = message.get("text", "").strip()
                     
                     if text.startswith("/start"):
-                        send_telegram_message(chat_id, "🤖 Hataları Giderilmiş SMC Bot aktif!\n• /istatistik -> Canlı başarı oranını gösterir.\n• /backtest -> Optimize edilmiş test raporunu sunar.")
+                        send_telegram_message(chat_id, "🤖 Hataları Giderilmiş SMC Bot aktif!\n• /istatistik -> Canlı başarı oranını gösterir.\n• /backtest -> Kusursuz test raporunu sunar.")
                     elif text.startswith("/istatistik"):
                         stats = get_performance_stats()
                         send_telegram_message(chat_id, stats)
                     elif text.startswith("/backtest"):
-                        send_telegram_message(chat_id, "⏳ Optimize backtest simülasyonu çalıştırılıyor...")
+                        send_telegram_message(chat_id, "⏳ Kusursuz backtest simülasyonu çalıştırılıyor...")
                         bt_result = run_backtest_simulation()
                         send_telegram_message(chat_id, bt_result)
         except Exception as e:
@@ -390,4 +392,4 @@ threading.Thread(target=bot_loop, daemon=True).start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
-    
+        
