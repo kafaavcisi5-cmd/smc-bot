@@ -19,7 +19,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Matematiksel Hatası Giderilmiş SMC Bot Aktif!"
+    return "Gerçek Retest Mantıklı SMC Bot Aktif!"
 
 def send_telegram_message(chat_id, message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -127,7 +127,7 @@ def get_performance_stats():
     )
 
 def run_backtest_simulation():
-    """İndeks Hatasından Arındırılmış Kusursuz Backtest Motoru"""
+    """Gerçek Retest ve Doğru Giriş Mantıklı Backtest Motoru"""
     try:
         data = yf.download("BTC-USD", period="1mo", interval="1h", progress=False)
         if data.empty or len(data) < 60:
@@ -147,8 +147,7 @@ def run_backtest_simulation():
         won_trades = 0
         lost_trades = 0
 
-        # Doğru aralık ve sıfır indeks kayması
-        for i in range(50, len(df) - 30):
+        for i in range(50, len(df) - 35):
             prev_candle = df.iloc[i-1]
             prev_prev_candle = df.iloc[i-3]
             curr_close = float(prev_candle['close'])
@@ -162,12 +161,26 @@ def run_backtest_simulation():
                 trade_result = "Açık"
                 
                 if is_bullish_fvg:
-                    entry = curr_close
-                    sl = entry - (entry * 0.015)  # Güvenli marj
-                    tp1 = entry + (entry * 0.03)   # 1:2 Sağlam R:R
+                    fvg_support = float(prev_prev_candle['high']) # FVG bölgesi alt sınır
+                    retested = False
+                    entry = fvg_support
                     
-                    # Gelecek mumları doğru indeksleme ile tarama
-                    for j in range(i, min(i + 30, len(df))):
+                    # Gelecek mumlarda FVG bölgesine retest beklenir
+                    for j in range(i, min(i + 35, len(df))):
+                        future_row = df.iloc[j]
+                        if float(future_row['low']) <= fvg_support:
+                            retested = True
+                            entry = fvg_support
+                            break
+                    
+                    if not retested:
+                        continue # Retest almayan işlem atlanır
+                        
+                    sl = entry - (entry * 0.012)
+                    tp1 = entry + (entry * 0.024)
+                    
+                    # İşlem açıldıktan sonraki sonuç takibi
+                    for j in range(i, min(i + 35, len(df))):
                         future_row = df.iloc[j]
                         if float(future_row['high']) >= tp1:
                             trade_result = "Kazandı"
@@ -177,11 +190,24 @@ def run_backtest_simulation():
                             break
 
                 elif is_bearish_fvg:
-                    entry = curr_close
-                    sl = entry + (entry * 0.015)
-                    tp1 = entry - (entry * 0.03)
+                    fvg_resistance = float(prev_prev_candle['low']) # FVG direnç bölgesi
+                    retested = False
+                    entry = fvg_resistance
                     
-                    for j in range(i, min(i + 30, len(df))):
+                    for j in range(i, min(i + 35, len(df))):
+                        future_row = df.iloc[j]
+                        if float(future_row['high']) >= fvg_resistance:
+                            retested = True
+                            entry = fvg_resistance
+                            break
+                    
+                    if not retested:
+                        continue
+                        
+                    sl = entry + (entry * 0.012)
+                    tp1 = entry - (entry * 0.024)
+                    
+                    for j in range(i, min(i + 35, len(df))):
                         future_row = df.iloc[j]
                         if float(future_row['low']) <= tp1:
                             trade_result = "Kazandı"
@@ -199,7 +225,7 @@ def run_backtest_simulation():
         win_rate = (won_trades / closed_trades * 100) if closed_trades > 0 else 0
         
         return (
-            f"🎯 *Kusursuz Backtest Raporu (BTC)*\n\n"
+            f"🎯 *Gerçek Retest Backtest Raporu (BTC)*\n\n"
             f"• Taranan Mum: `{len(df)} adet`\n"
             f"• Toplam Sinyal: `{total_signals}`\n"
             f"• Sonuçlanan: `{closed_trades}`\n"
@@ -213,15 +239,15 @@ def run_backtest_simulation():
 def calculate_risk_reward(df, fvg_type, current_price):
     if "Boğa" in fvg_type:
         entry = current_price
-        stop_loss = entry - (entry * 0.015)
-        tp1 = entry + (entry * 0.03)
-        tp2 = entry + (entry * 0.045)
+        stop_loss = entry - (entry * 0.012)
+        tp1 = entry + (entry * 0.024)
+        tp2 = entry + (entry * 0.036)
         return entry, stop_loss, tp1, tp2
     elif "Ayı" in fvg_type:
         entry = current_price
-        stop_loss = entry + (entry * 0.015)
-        tp1 = entry - (entry * 0.03)
-        tp2 = entry - (entry * 0.045)
+        stop_loss = entry + (entry * 0.012)
+        tp1 = entry - (entry * 0.024)
+        tp2 = entry - (entry * 0.036)
         return entry, stop_loss, tp1, tp2
     return current_price, 0, 0, 0
 
@@ -237,10 +263,10 @@ def advanced_smc_analysis(df, timeframe):
     is_valid_fvg = False
     
     if (float(df['low'].iloc[-1]) > float(df['high'].iloc[-3])) and (current_close > sma_val):
-        fvg_signal = "🟢 Boğa FVG (Trend Yönünde)"
+        fvg_signal = "🟢 Boğa FVG (Retest Bekleniyor)"
         is_valid_fvg = True
     elif (float(df['high'].iloc[-1]) < float(df['low'].iloc[-3])) and (current_close < sma_val):
-        fvg_signal = "🔴 Ayı FVG (Trend Yönünde)"
+        fvg_signal = "🔴 Ayı FVG (Retest Bekleniyor)"
         is_valid_fvg = True
 
     current_price = current_close
@@ -275,7 +301,7 @@ def scan_crypto_markets():
             
             if is_fvg:
                 msg += (
-                    f"\n🎯 *İşlem Seviyeleri:*\n"
+                    f"\n🎯 *İşlem Seviyeleri (Retest):*\n"
                     f"• Giriş: `{entry:.4f}`\n"
                     f"• Stop-Loss (SL): `{sl:.4f}`\n"
                     f"• Hedef 1 (TP1): `{tp1:.4f}`\n"
@@ -330,7 +356,7 @@ def scan_traditional_markets():
             
             if is_fvg:
                 msg += (
-                    f"\n🎯 *İşlem Seviyeleri:*\n"
+                    f"\n🎯 *İşlem Seviyeleri (Retest):*\n"
                     f"• Giriş: `{entry:.2f}`\n"
                     f"• Stop-Loss (SL): `{sl:.2f}`\n"
                     f"• Hedef 1 (TP1): `{tp1:.2f}`\n"
@@ -348,7 +374,7 @@ def scan_traditional_markets():
 def bot_loop():
     time.sleep(10)
     while True:
-        print("--- Kusursuz Tarama Başlatıldı ---")
+        print("--- Retest Tarama Başlatıldı ---")
         crypto_prices = scan_crypto_markets()
         market_prices = scan_traditional_markets()
         
@@ -374,12 +400,12 @@ def telegram_listener():
                     text = message.get("text", "").strip()
                     
                     if text.startswith("/start"):
-                        send_telegram_message(chat_id, "🤖 Hataları Giderilmiş SMC Bot aktif!\n• /istatistik -> Canlı başarı oranını gösterir.\n• /backtest -> Kusursuz test raporunu sunar.")
+                        send_telegram_message(chat_id, "🤖 Gerçek Retest SMC Bot aktif!\n• /istatistik -> Canlı başarı oranını gösterir.\n• /backtest -> Retestsiz çöpleri eleyen test raporunu sunar.")
                     elif text.startswith("/istatistik"):
                         stats = get_performance_stats()
                         send_telegram_message(chat_id, stats)
                     elif text.startswith("/backtest"):
-                        send_telegram_message(chat_id, "⏳ Kusursuz backtest simülasyonu çalıştırılıyor...")
+                        send_telegram_message(chat_id, "⏳ Retest tabanlı backtest simülasyonu çalıştırılıyor...")
                         bt_result = run_backtest_simulation()
                         send_telegram_message(chat_id, bt_result)
         except Exception as e:
@@ -392,4 +418,4 @@ threading.Thread(target=bot_loop, daemon=True).start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
-        
+                
