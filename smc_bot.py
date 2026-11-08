@@ -8,7 +8,7 @@ import os
 import sqlite3
 import io
 import matplotlib
-matplotlib.use('Agg') # Sunucu tarafı grafik çizimi için zorunludur
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from datetime import datetime
 from flask import Flask
@@ -23,12 +23,11 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Sanal Bakiye ve Grafik Destekli SMC Bot Aktif!"
+    return "Sanal Bakiye ve Grafik Destekli SMC Bot Kesintisiz Çalışıyor!"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    # Sinyal tablosu
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS signals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,7 +42,6 @@ def init_db():
             date TEXT
         )
     ''')
-    # Hesap bakiye tablosu (1000$ başlangıç)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS account (
             id INTEGER PRIMARY KEY,
@@ -110,7 +108,7 @@ def log_new_signal(symbol, fvg_type, entry, sl, tp1, tp2):
         return
         
     current_bal = get_current_balance()
-    risk_amount = current_bal * 0.02 # Kasanın %2'si risk
+    risk_amount = current_bal * 0.02
     date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
     
     cursor.execute('''
@@ -135,7 +133,7 @@ def update_open_signals(current_prices):
             
             if is_bullish:
                 if price >= tp1:
-                    profit = risk_amount * 2.5 # 1:2.5 R:R Kazanç
+                    profit = risk_amount * 2.5
                     new_bal = update_balance(profit)
                     cursor.execute("UPDATE signals SET status = 'Kazandı (TP1)' WHERE id = ?", (sig_id,))
                     send_telegram_message(TELEGRAM_CHAT_ID, f"🎯 *HEDEF BAŞARIYLA ULAŞILDI!*\n\n• Varlık: `{sym}`\n• Durum: Kazandı 🟢\n• Net Kâr: `+${profit:.2f}`\n• Güncel Bakiye: `${new_bal:.2f}`")
@@ -165,7 +163,6 @@ def update_open_signals(current_prices):
     conn.close()
 
 def get_equity_curve_chart():
-    """Matplotlib ile bakiye eğrisi grafiği oluşturur ve bayt olarak döndürür"""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("SELECT date, status, risk_amount FROM signals WHERE status LIKE '%Kazandı%' OR status LIKE '%Kaybetti%' ORDER BY id ASC")
@@ -183,7 +180,7 @@ def get_equity_curve_chart():
         else:
             current_b -= risk
         balances.append(current_b)
-        dates.append(d.split()[0]) # Sadece tarih kısmı
+        dates.append(d.split()[0])
         
     plt.figure(figsize=(8, 4))
     plt.plot(balances, marker='o', color='#2ecc71' if balances[-1] >= 1000 else '#e74c3c', linewidth=2)
@@ -192,7 +189,6 @@ def get_equity_curve_chart():
     plt.ylabel("Bakiye ($)", color='white')
     plt.grid(True, linestyle='--', alpha=0.3)
     
-    # Koyu tema tasarımı
     ax = plt.gca()
     ax.set_facecolor('#1e1e1e')
     plt.gcf().patch.set_facecolor('#121212')
@@ -508,4 +504,9 @@ def scan_traditional_markets():
             analysis, is_fvg, entry, sl, tp1, tp2 = advanced_smc_analysis(df, "1h")
             
             if is_fvg:
-       
+                current_bal = get_current_balance()
+                risk_amt = current_bal * 0.02
+                risk_per_unit = abs(entry - sl)
+                suggested_units = (risk_amt / risk_per_unit) if risk_per_unit > 0 else 0
+                
+                msg
