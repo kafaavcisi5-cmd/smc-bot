@@ -12,7 +12,6 @@ from flask import Flask
 TELEGRAM_BOT_TOKEN = "9147785620:AAGDSk6n_dppdsFt0xsGKlnoD8rCHfp3rdo"
 TELEGRAM_CHAT_ID = "1709473407"
 
-# Render ortamında dosya yolunu garantiye alalım
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.path.join(BASE_DIR, "signals_log.json")
 
@@ -20,7 +19,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Pro Performans Takipli SMC Bot Aktif!"
+    return "Pro Performans ve Backtest Takipli SMC Bot Aktif!"
 
 def send_telegram_message(chat_id, message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -41,8 +40,7 @@ def load_signals():
     try:
         with open(LOG_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception as e:
-        print(f"Log okuma hatası: {e}")
+    except:
         return []
 
 def save_signals(signals):
@@ -109,7 +107,7 @@ def get_performance_stats():
     signals = load_signals()
     total = len(signals)
     if total == 0:
-        return "📊 *Bot Performans İstatistiği*\n\nHenüz kaydedilmiş bir sinyal bulunmuyor. Sinyal üretildikten sonra istatistikler burada görünecektir."
+        return "📊 *Bot Performans İstatistiği*\n\nHenüz kaydedilmiş bir sinyal bulunmuyor."
         
     won = sum(1 for s in signals if "Kazandı" in s["status"])
     lost = sum(1 for s in signals if "Kaybetti" in s["status"])
@@ -118,7 +116,7 @@ def get_performance_stats():
     closed = won + lost
     win_rate = (won / closed * 100) if closed > 0 else 0
     
-    stats_msg = (
+    return (
         f"📊 *Bot Performans ve Başarı İstatistiği*\n\n"
         f"• Toplam Sinyal: `{total}`\n"
         f"• Sonuçlanan İşlem: `{closed}`\n"
@@ -127,7 +125,79 @@ def get_performance_stats():
         f"• Kaybeden (SL): `{lost}` 🔴\n"
         f"🏆 *Başarı Oranı (Win Rate):* `%{win_rate:.1f}`"
     )
-    return stats_msg
+
+def run_backtest_simulation():
+    """Geçmiş verilerle telefondan tetiklenebilen simülasyon"""
+    try:
+        exchange = ccxt.binance()
+        ohlcv = exchange.fetch_ohlcv('BTC/USDT', '1h', limit=300)
+        df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        
+        total_signals = 0
+        won_trades = 0
+        lost_trades = 0
+
+        for i in range(25, len(df) - 20):
+            window_df = df.iloc[i-25:i].copy()
+            avg_volume = window_df['volume'].iloc[-21:-1].mean()
+            current_volume = window_df['volume'].iloc[-1]
+            is_high_volume = current_volume > (avg_volume * 1.1)
+
+            is_bullish_fvg = window_df['low'].iloc[-1] > window_df['high'].iloc[-3]
+            is_bearish_fvg = window_df['high'].iloc[-1] < window_df['low'].iloc[-3]
+            
+            if (is_bullish_fvg or is_bearish_fvg) and is_high_volume:
+                total_signals += 1
+                entry = float(window_df['close'].iloc[-1])
+                recent_low = window_df['low'].iloc[-5:-1].min()
+                recent_high = window_df['high'].iloc[-5:-1].max()
+                
+                if is_bullish_fvg:
+                    sl = recent_low - (recent_low * 0.002)
+                    risk = entry - sl
+                    tp1 = entry + (risk * 2)
+                    future_candles = df.iloc[i:i+20]
+                    trade_result = "Açık"
+                    for _, row in future_candles.iterrows():
+                        if row['high'] >= tp1:
+                            trade_result = "Kazandı"
+                            break
+                        elif row['low'] <= sl:
+                            trade_result = "Kaybetti"
+                            break
+                    if trade_result == "Kazandı": won_trades += 1
+                    elif trade_result == "Kaybetti": lost_trades += 1
+
+                elif is_bearish_fvg:
+                    sl = recent_high + (recent_high * 0.002)
+                    risk = sl - entry
+                    tp1 = entry - (risk * 2)
+                    future_candles = df.iloc[i:i+20]
+                    trade_result = "Açık"
+                    for _, row in future_candles.iterrows():
+                        if row['low'] <= tp1:
+                            trade_result = "Kazandı"
+                            break
+                        elif row['high'] >= sl:
+                            trade_result = "Kaybetti"
+                            break
+                    if trade_result == "Kazandı": won_trades += 1
+                    elif trade_result == "Kaybetti": lost_trades += 1
+
+        closed_trades = won_trades + lost_trades
+        win_rate = (won_trades / closed_trades * 100) if closed_trades > 0 else 0
+        
+        return (
+            f"📈 *Geçmiş Veri Backtest Raporu (BTC/USDT)*\n\n"
+            f"• Taranan Mum: `300 adet`\n"
+            f"• Toplam Sinyal: `{total_signals}`\n"
+            f"• Sonuçlanan: `{closed_trades}`\n"
+            f"• Kazanan (TP): `{won_trades}` 🟢\n"
+            f"• Kaybeden (SL): `{lost_trades}` 🔴\n"
+            f"🏆 *Geçmiş Başarı Oranı:* `%{win_rate:.1f}`"
+        )
+    except Exception as e:
+        return f"Backtest çalıştırılırken hata oluştu: {e}"
 
 def calculate_risk_reward(df, fvg_type, current_price):
     recent_low = df['low'].iloc[-5:-1].min()
@@ -306,12 +376,15 @@ def telegram_listener():
                     chat_id = message.get("chat", {}).get("id")
                     text = message.get("text", "").strip()
                     
-                    # Komutları .startswith kullanarak esnek hale getirdik (örn: /istatistik@bot_adi)
                     if text.startswith("/start"):
-                        send_telegram_message(chat_id, "🤖 Performans Takipli Pro SMC Bot aktif! İstatistikler için /istatistik yazabilirsiniz.")
+                        send_telegram_message(chat_id, "🤖 Pro SMC Bot aktif!\n• /istatistik -> Canlı sinyal başarı oranını gösterir.\n• /backtest -> Geçmiş verilerle stratejiyi test eder.")
                     elif text.startswith("/istatistik"):
                         stats = get_performance_stats()
                         send_telegram_message(chat_id, stats)
+                    elif text.startswith("/backtest"):
+                        send_telegram_message(chat_id, "⏳ Backtest simülasyonu çalıştırılıyor, lütfen bekleyin...")
+                        bt_result = run_backtest_simulation()
+                        send_telegram_message(chat_id, bt_result)
         except Exception as e:
             print(f"Dinleme hatası: {e}")
         time.sleep(2)
@@ -322,4 +395,4 @@ threading.Thread(target=bot_loop, daemon=True).start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
-            
+                            
