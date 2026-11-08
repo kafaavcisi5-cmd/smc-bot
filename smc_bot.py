@@ -23,7 +23,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Güven Skorlu Akıllı Hedge Fund Terminali Aktif!"
+    return "Güven Skorlu ve Format Düzeltilmiş Hedge Fund Terminali Aktif!"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -173,7 +173,8 @@ def get_active_signals_text():
     for r in rows:
         sym, stype, entry, sl, tp1, score, date = r
         score_val = score if score else 80
-        msg += f"• **{sym}** (`{stype}` | Skor: %{score_val})\n  - Giriş: `{entry}` | Stop: `{sl}` | Hedef: `{tp1}`\n\n"
+        fmt = ".4f" if entry < 1 else ".2f"
+        msg += f"• **{sym}** (`{stype}` | Skor: %{score_val})\n  - Giriş: `{entry:{fmt}}` | Stop: `{sl:{fmt}}` | Hedef: `{tp1:{fmt}}`\n\n"
     return msg
 
 def get_past_signals_text():
@@ -188,8 +189,9 @@ def get_past_signals_text():
     for r in rows:
         sym, stype, entry, status, score, date = r
         score_val = score if score else 80
+        fmt = ".4f" if entry < 1 else ".2f"
         emoji = "🟢" if "Kazandi" in status or "Kazandı" in status else "🔴"
-        msg += f"• **{sym}** (`{stype}` | Skor: %{score_val})\n  - Giriş: `{entry}` | Durum: {emoji} `{status}`\n  - Tarih: `{date}`\n\n"
+        msg += f"• **{sym}** (`{stype}` | Skor: %{score_val})\n  - Giriş: `{entry:{fmt}}` | Durum: {emoji} `{status}`\n  - Tarih: `{date}`\n\n"
     return msg
 
 def get_performance_stats():
@@ -264,29 +266,23 @@ def run_backtest_simulation():
         return f"Backtest hatası: {e}"
 
 def calculate_confidence_score(df_1h, df_4h, is_bullish):
-    """Yapay Zekâ ve Konfluans Tabanlı Güven Skoru Hesaplama (0 - 100)"""
-    score = 70 # Temel taban skor
+    score = 70
     try:
-        # 1. Hacim Gücü Faktörü
         if 'volume' in df_1h.columns and len(df_1h) >= 20:
             avg_vol = df_1h['volume'].rolling(20).mean().iloc[-1]
             curr_vol = df_1h['volume'].iloc[-1]
             if not pd.isna(avg_vol) and avg_vol > 0 and curr_vol > (avg_vol * 1.5):
-                score += 15 # Güçlü hacim patlaması (+15)
+                score += 15
             elif not pd.isna(avg_vol) and avg_vol > 0 and curr_vol > avg_vol:
-                score += 8  # Normal üstü hacim (+8)
-
-        # 2. Çoklu Zaman Dilimi Trend Kalitesi
+                score += 8
         if df_4h is not None and len(df_4h) >= 20:
             sma_4h = df_4h['close'].rolling(20).mean().iloc[-1]
             close_4h = df_4h['close'].iloc[-1]
             dist_pct = abs(close_4h - sma_4h) / sma_4h * 100
-            if dist_pct > 1.0: # Güçlü trend ivmesi
+            if dist_pct > 1.0:
                 score += 10
             else:
                 score += 5
-
-        # Skor sınırlandırma (70 - 98 arası)
         score = min(max(score, 70), 98)
     except:
         score = 80
@@ -328,13 +324,14 @@ def advanced_smc_analysis(df_1h, df_4h=None):
     return "Denge", False, 0, 0, 0, 0, 0
 
 def scan_all_markets_manually():
-    send_telegram_message(TELEGRAM_CHAT_ID, "🔍 *Yapay Zekâ Güven Skorlu Tarama Başlatıldı...*")
+    send_telegram_message(TELEGRAM_CHAT_ID, "🔍 *Yapay Zekâ Güven Skorlu ve Format Düzeltilmiş Tarama Başlatıldı...*")
     cp, mp = scan_crypto_markets(), scan_traditional_markets()
     update_open_signals({**cp, **mp})
     send_telegram_message(TELEGRAM_CHAT_ID, "✅ *Tarama Tamamlandı!*")
 
 def scan_crypto_markets():
     ex = ccxt.binance()
+    ex.load_markets()
     symbols = [
         'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT', 
         'ADA/USDT', 'AVAX/USDT', 'DOGE/USDT', 'DOT/USDT', 'MATIC/USDT', 
@@ -352,7 +349,8 @@ def scan_crypto_markets():
             if is_fvg:
                 risk_amt = get_current_balance() * 0.02
                 s_units = (risk_amt / abs(entry - sl)) if abs(entry - sl) > 0 else 0
-                send_telegram_message(TELEGRAM_CHAT_ID, f"🚨 *KRİPTO SİNYAL: {sym}*\n• Fiyat: `{lc}`\n• Strateji: `{analysis}`\n• 🧠 *Yapay Zekâ Güven Skoru:* `%{score}`\n• Giriş: `{entry:.4f}` | SL: `{sl:.4f}` | TP: `{tp1:.4f}`\n• Boyut: `{s_units:.4f} adet`")
+                fmt = ".4f" if lc < 1 else ".2f"
+                send_telegram_message(TELEGRAM_CHAT_ID, f"🚨 *KRİPTO SİNYAL: {sym}*\n• Fiyat: `{lc:{fmt}}`\n• Strateji: `{analysis}`\n• 🧠 *Yapay Zekâ Güven Skoru:* `%{score}`\n• Giriş: `{entry:{fmt}}` | SL: `{sl:{fmt}}` | TP: `{tp1:{fmt}}`\n• Boyut: `{s_units:.4f} adet`")
                 log_new_signal(sym, analysis, entry, sl, tp1, tp2, score)
             time.sleep(0.5)
         except Exception as e: print(e)
@@ -384,7 +382,8 @@ def scan_traditional_markets():
             if is_fvg:
                 risk_amt = get_current_balance() * 0.02
                 s_units = (risk_amt / abs(entry - sl)) if abs(entry - sl) > 0 else 0
-                send_telegram_message(TELEGRAM_CHAT_ID, f"📈 *PİYASA SİNYAL: {name}*\n• Fiyat: `{lc:.2f}`\n• Strateji: `{analysis}`\n• 🧠 *Yapay Zekâ Güven Skoru:* `%{score}`\n• Giriş: `{entry:.2f}` | SL: `{sl:.2f}` | TP: `{tp1:.2f}`\n• Boyut: `{s_units:.2f} adet`")
+                fmt = ".4f" if lc < 1 else ".2f"
+                send_telegram_message(TELEGRAM_CHAT_ID, f"📈 *PİYASA SİNYAL: {name}*\n• Fiyat: `{lc:{fmt}}`\n• Strateji: `{analysis}`\n• 🧠 *Yapay Zekâ Güven Skoru:* `%{score}`\n• Giriş: `{entry:{fmt}}` | SL: `{sl:{fmt}}` | TP: `{tp1:{fmt}}`\n• Boyut: `{s_units:.2f} adet`")
                 log_new_signal(name, analysis, entry, sl, tp1, tp2, score)
             time.sleep(0.5)
         except Exception as e: print(e)
@@ -409,7 +408,7 @@ def telegram_listener():
                     msg_obj = r.get("message", {})
                     chat_id, text = msg_obj.get("chat", {}).get("id"), msg_obj.get("text", "").strip()
                     if text.startswith("/start"):
-                        send_telegram_message(chat_id, "🤖 *Güven Skorlu Hedge Fund Bot Aktif!*\n\nKomutlar:\n• `/istatistik` -> Bakiye ve başarı\n• `/grafik` -> Equity Curve\n• `/durum` -> Açık pozisyonlar\n• `/gecmis` -> Geçmiş işlemler\n• `/tara` -> Manuel tara\n• `/backtest` -> 1000$ simülasjon")
+                        send_telegram_message(chat_id, "🤖 *Gelişmiş Hedge Fund Bot Aktif!*\n\nKomutlar:\n• `/istatistik` -> Bakiye ve başarı\n• `/grafik` -> Equity Curve\n• `/durum` -> Açık pozisyonlar\n• `/gecmis` -> Geçmiş işlemler\n• `/tara` -> Manuel tara\n• `/backtest` -> 1000$ simülasyon")
                     elif text.startswith("/istatistik"): send_telegram_message(chat_id, get_performance_stats())
                     elif text.startswith("/grafik"):
                         send_telegram_message(chat_id, "📈 Grafik hazırlanıyor...")
