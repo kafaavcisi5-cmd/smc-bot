@@ -19,7 +19,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Pro Kalite Filtreli SMC Bot Aktif!"
+    return "Ultra Optimize SMC Bot Aktif!"
 
 def send_telegram_message(chat_id, message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -127,7 +127,7 @@ def get_performance_stats():
     )
 
 def run_backtest_simulation():
-    """Kurumsal Displacement ve Hacim Filtreli Backtest Motoru"""
+    """1:1 Rİsk/Ödül Oranlı Optimize Backtest Motoru"""
     try:
         data = yf.download("BTC-USD", period="1mo", interval="1h", progress=False)
         if data.empty or len(data) < 50:
@@ -142,8 +142,6 @@ def run_backtest_simulation():
         })
         
         df['sma50'] = df['close'].rolling(50).mean()
-        df['body'] = abs(df['close'] - df['open'])
-        df['avg_body'] = df['body'].rolling(20).mean()
         
         total_signals = 0
         won_trades = 0
@@ -154,13 +152,8 @@ def run_backtest_simulation():
             current_close = float(df['close'].iloc[i-1])
             sma_val = float(df['sma50'].iloc[i-1])
             
-            # Kurumsal Filtre: Mum gövdesi ortalama gövdeden en az 1.5 kat büyük olmalı (Displacement)
-            current_body = float(df['body'].iloc[i-1])
-            avg_body = float(df['avg_body'].iloc[i-1])
-            is_displacement = current_body > (avg_body * 1.5)
-
-            is_bullish_fvg = (window_df['low'].iloc[-1] > window_df['high'].iloc[-3]) and (current_close > sma_val) and is_displacement
-            is_bearish_fvg = (window_df['high'].iloc[-1] < window_df['low'].iloc[-3]) and (current_close < sma_val) and is_displacement
+            is_bullish_fvg = (window_df['low'].iloc[-1] > window_df['high'].iloc[-3]) and (current_close > sma_val)
+            is_bearish_fvg = (window_df['high'].iloc[-1] < window_df['low'].iloc[-3]) and (current_close < sma_val)
             
             if is_bullish_fvg or is_bearish_fvg:
                 total_signals += 1
@@ -175,7 +168,7 @@ def run_backtest_simulation():
                     sl = recent_low - (recent_low * 0.008)
                     risk = entry - sl
                     if risk <= 0: risk = entry * 0.01
-                    tp1 = entry + (risk * 2) # 1:2 Risk/Ödül
+                    tp1 = entry + risk # 1:1 Oran (Gerçekçi hedef)
                     
                     for _, row in future_candles.iterrows():
                         hit_tp = row['high'] >= tp1
@@ -194,7 +187,7 @@ def run_backtest_simulation():
                     sl = recent_high + (recent_high * 0.008)
                     risk = sl - entry
                     if risk <= 0: risk = entry * 0.01
-                    tp1 = entry - (risk * 2)
+                    tp1 = entry - risk # 1:1 Oran
                     
                     for _, row in future_candles.iterrows():
                         hit_tp = row['low'] <= tp1
@@ -218,9 +211,9 @@ def run_backtest_simulation():
         win_rate = (won_trades / closed_trades * 100) if closed_trades > 0 else 0
         
         return (
-            f"📈 *Kurumsal Filtreli Backtest (BTC)*\n\n"
+            f"⚡ *Ultra Optimize Backtest Raporu (BTC)*\n\n"
             f"• Taranan Mum: `{len(df)} adet`\n"
-            f"• Toplam Kaliteli Sinyal: `{total_signals}`\n"
+            f"• Toplam Sinyal: `{total_signals}`\n"
             f"• Sonuçlanan: `{closed_trades}`\n"
             f"• Kazanan (TP): `{won_trades}` 🟢\n"
             f"• Kaybeden (SL): `{lost_trades}` 🔴\n"
@@ -238,16 +231,16 @@ def calculate_risk_reward(df, fvg_type, current_price):
         stop_loss = recent_low - (recent_low * 0.008)
         risk = entry - stop_loss
         if risk <= 0: risk = entry * 0.01
-        tp1 = entry + (risk * 2)
-        tp2 = entry + (risk * 3)
+        tp1 = entry + risk
+        tp2 = entry + (risk * 2)
         return entry, stop_loss, tp1, tp2
     elif "Ayı" in fvg_type:
         entry = current_price
         stop_loss = recent_high + (recent_high * 0.008)
         risk = stop_loss - entry
         if risk <= 0: risk = entry * 0.01
-        tp1 = entry - (risk * 2)
-        tp2 = entry - (risk * 3)
+        tp1 = entry - risk
+        tp2 = entry - (risk * 2)
         return entry, stop_loss, tp1, tp2
     return current_price, 0, 0, 0
 
@@ -256,23 +249,17 @@ def advanced_smc_analysis(df, timeframe):
         return "Yetersiz Veri", False, 0, 0, 0, 0
 
     df['sma50'] = df['close'].rolling(50).mean()
-    df['body'] = abs(df['close'] - df['open'])
-    df['avg_body'] = df['body'].rolling(20).mean()
-    
     current_close = float(df['close'].iloc[-1])
     sma_val = float(df['sma50'].iloc[-1])
-    current_body = float(df['body'].iloc[-1])
-    avg_body = float(df['avg_body'].iloc[-1])
-    is_displacement = current_body > (avg_body * 1.5)
 
     fvg_signal = "Denge Bölgesi"
     is_valid_fvg = False
     
-    if (df['low'].iloc[-1] > df['high'].iloc[-3]) and (current_close > sma_val) and is_displacement:
-        fvg_signal = "🟢 Boğa FVG (Kurumsal İtki)"
+    if (df['low'].iloc[-1] > df['high'].iloc[-3]) and (current_close > sma_val):
+        fvg_signal = "🟢 Boğa FVG (Trend Yönünde)"
         is_valid_fvg = True
-    elif (df['high'].iloc[-1] < df['low'].iloc[-3]) and (current_close < sma_val) and is_displacement:
-        fvg_signal = "🔴 Ayı FVG (Kurumsal İtki)"
+    elif (df['high'].iloc[-1] < df['low'].iloc[-3]) and (current_close < sma_val):
+        fvg_signal = "🔴 Ayı FVG (Trend Yönünde)"
         is_valid_fvg = True
 
     current_price = float(df['close'].iloc[-1])
@@ -380,7 +367,7 @@ def scan_traditional_markets():
 def bot_loop():
     time.sleep(10)
     while True:
-        print("--- Kurumsal Filtreli Tarama Başlatıldı ---")
+        print("--- Ultra Optimize Tarama Başlatıldı ---")
         crypto_prices = scan_crypto_markets()
         market_prices = scan_traditional_markets()
         
@@ -401,17 +388,17 @@ def telegram_listener():
             if data.get("ok"):
                 for result in data.get("result", []):
                     offset = result["update_id"] + 1
-                    message = result.get("message", {})
+                    message = result.get("message", {}).get("id")
                     chat_id = message.get("chat", {}).get("id")
                     text = message.get("text", "").strip()
                     
                     if text.startswith("/start"):
-                        send_telegram_message(chat_id, "🤖 Kurumsal Filtreli Pro SMC Bot aktif!\n• /istatistik -> Canlı başarı oranını gösterir.\n• /backtest -> Profesyonel test raporunu sunar.")
+                        send_telegram_message(chat_id, "🤖 Ultra Optimize Pro SMC Bot aktif!\n• /istatistik -> Canlı başarı oranını gösterir.\n• /backtest -> Güncel test raporunu sunar.")
                     elif text.startswith("/istatistik"):
                         stats = get_performance_stats()
                         send_telegram_message(chat_id, stats)
                     elif text.startswith("/backtest"):
-                        send_telegram_message(chat_id, "⏳ Kurumsal backtest simülasyonu çalıştırılıyor...")
+                        send_telegram_message(chat_id, "⏳ Ultra optimize backtest simülasyonu çalıştırılıyor...")
                         bt_result = run_backtest_simulation()
                         send_telegram_message(chat_id, bt_result)
         except Exception as e:
@@ -424,4 +411,4 @@ threading.Thread(target=bot_loop, daemon=True).start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
-                          
+    
