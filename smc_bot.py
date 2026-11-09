@@ -82,7 +82,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def istatistik(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bal = get_balance()
     try:
-        trades_res = supabase.table("trades").select("*").execute()
+        trades_res = supabase.table("trade_records").select("*").execute()
         trades = trades_res.data if trades_res.data else []
         
         total_trades = len(trades)
