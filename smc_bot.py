@@ -12,13 +12,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Render / Çevre Değişkenleri ve Token
+# Çevre Değişkenleri
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "9147785620:AAHfswghuWydXyw7_ms9qywWtcoaED5UMM4")
-SUPABASE_URL = "https://zfqchteulqkqzylcchpj.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpmcWNodGV1bHFrcXp5bGNjaHBqIiwicm9sZSI6ImFub24iLCJpYXQiOjV9.N4Z0XmSgCG5O4oK-nZg8vQ5K-7x9vQ2Z8mK9vQ"
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://zfqchteulqkqzylcchpj.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpmcWNodGV1bHFrcXp5bGNjaHBqIiwicm9sZSI6ImFub24iLCJpYXQiOjV9.N4Z0XmSgCG5O4oK-nZg8vQ5K-7x9vQ2Z8mK9vQ")
 
 def get_supabase_data():
-    """Supabase kütüphanesi yerine doğrudan HTTP REST API kullanarak DNS takılmalarını bypass eder"""
+    """Supabase REST API ile güvenli veri çekme"""
     url = f"{SUPABASE_URL}/rest/v1/trades?select=*"
     headers = {
         "apikey": SUPABASE_KEY,
@@ -35,7 +35,7 @@ def get_supabase_data():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_message = (
         "🤖 **SMC & Price Action Botuna Hoş Geldiniz!**\n\n"
-        "Plan C (HTTP REST Mimari) aktif. Komutları hemen kullanabilirsiniz:\n\n"
+        "Koyeb (Kararlı Altyapı) aktif. Komutları hemen kullanabilirsiniz:\n\n"
         "🔍 /tara - Supabase bulutundaki güncel piyasa sinyallerini listeler.\n"
         "📊 /durum - Açık pozisyonları ve anlık durumu gösterir.\n"
         "📈 /istatistik - Genel başarı oranını ve kâr/zarar özetini sunar.\n"
@@ -51,8 +51,8 @@ async def tara(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if not trades:
             await update.message.reply_text(
-                "📂 **Veritabanı Tablosu Boş veya Erişiliyor.**\n\n"
-                "Geçici Test Sinyali:\n"
+                "📂 **Veritabanı Tablosu Şu An Boş.**\n\n"
+                "Örnek Görünüm:\n"
                 "✅ **BTC/USDT** (LONG)\n"
                 "• **Giriş:** `$91,200.00` | **SL:** `$89,832.00`\n"
                 "• **Güven:** ⭐️ %90",
@@ -104,7 +104,7 @@ async def istatistik(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📈 **Genel İstatistikler:**\n\n"
             f"• **Toplam İşlem:** {total}\n"
             f"• **Toplam Kâr/Zarar:** `${pnl_sum:.2f}`\n"
-            f"• **Veritabanı Durumu:** Aktif ve Senkronize (Supabase REST)"
+            f"• **Veritabanı Durumu:** Aktif (Koyeb & Supabase)"
         )
         await update.message.reply_text(text, parse_mode="Markdown")
     except Exception as e:
@@ -167,12 +167,13 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("tara", tara))
     app.add_handler(CommandHandler("durum", durum))
+    app.add_handler(CommandHandler.Handler if hasattr(CommandHandler, 'Handler') else CommandHandler("istatistik", istatistik)) # safe fallback
     app.add_handler(CommandHandler("istatistik", istatistik))
     app.add_handler(CommandHandler("gecmis", gecmis))
     app.add_handler(CommandHandler("grafik", grafik))
     app.add_handler(CommandHandler("backtest", backtest))
 
-    logger.info("Bot başlatılıyor...")
+    logger.info("Koyeb Bot başlatılıyor...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
