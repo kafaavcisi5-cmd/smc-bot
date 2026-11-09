@@ -17,8 +17,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Render / Çevre Değişkenleri
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "9147785620:AAFbRuCRH1Ttsig500x_zr8JM9VCBKo9Qg")
+# Render / Çevre Değişkenleri (Yeni Token Güncellendi)
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "9147785620:AAHfswghuWydXyw7_ms9qywWtcoaED5UMM4")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://zfqchteulqkqzylcchpj.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpmcWNodGV1bHFrcXp5bGNjaHBqIiwicm9sZSI6ImFub24iLCJpYXQiOjV9.N4Z0XmSgCG5O4oK-nZg8vQ5K-7x9vQ2Z8mK9vQ")
 
@@ -102,7 +102,6 @@ async def tara(update: Update, context: ContextTypes.DEFAULT_TYPE):
             df = yf.download(yf_ticker, period="5d", interval="1d", progress=False)
             if not df.empty and 'Close' in df.columns:
                 close_data = df['Close']
-                # Pandas Series veya DataFrame durumunu güvenli şekilde float'a dönüştür (Series hatası çözümü)
                 price = float(close_data.iloc[-1].item() if hasattr(close_data.iloc[-1], 'item') else close_data.iloc[-1])
                 
                 prev_price = float(close_data.iloc[-2].item() if hasattr(close_data.iloc[-2], 'item') else close_data.iloc[-2]) if len(df) >= 2 else price
