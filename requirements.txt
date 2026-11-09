@@ -1,7 +1,4 @@
 python-telegram-bot
 supabase
-ccxt
-yfinance
-pandas
+requests
 numpy
-flask
