@@ -82,7 +82,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def istatistik(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bal = get_balance()
     try:
-        trades_res = supabase.table("trade_records").select("*").execute()
+        # Tablo adı diğer fonksiyonlarla uyumlu olması için 'trades' olarak güncellendi
+        trades_res = supabase.table("trades").select("*").execute()
         trades = trades_res.data if trades_res.data else []
         
         total_trades = len(trades)
@@ -374,10 +375,8 @@ def main():
     application.run_polling()
 
 if __name__ == "__main__":
-    # Render port gereksinimi için Flask sunucusunu arka planda başlatıyoruz
     web_thread = threading.Thread(target=run_web)
     web_thread.daemon = True
     web_thread.start()
 
-    # Telegram botunu ana akışta başlatıyoruz
     main()
