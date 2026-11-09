@@ -4,7 +4,6 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from supabase import create_client, Client
-import requests
 import numpy as np
 
 # Logging ayarları
@@ -25,10 +24,10 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_message = (
         "🤖 **SMC & Price Action Botuna Hoş Geldiniz!**\n\n"
-        "Piyasaları taramak ve işlemleri yönetmek için aşağıdaki komutları kullanabilirsiniz:\n\n"
-        "🔍 /tara - Canlı piyasa verilerini tarar ve sinyalleri Supabase buluta kaydeder.\n"
-        "📊 /durum - Açık pozisyonları ve anlık durumu listeler.\n"
-        "📈 /istatistik - Genel başarı oranını ve kâr/zarar özetini gösterir.\n"
+        "Plan C (Kararlı Mimari) aktif. Komutları hemen kullanabilirsiniz:\n\n"
+        "🔍 /tara - Supabase bulutundaki güncel piyasa sinyallerini listeler.\n"
+        "📊 /durum - Açık pozisyonları ve anlık durumu gösterir.\n"
+        "📈 /istatistik - Genel başarı oranını ve kâr/zarar özetini sunar.\n"
         "📜 /gecmis - Tamamlanan geçmiş işlemleri listeler.\n"
         "📉 /grafik - Performans grafiği ve özet sunar.\n"
         "🧪 /backtest - Dinamik backtest simülasyonunu çalıştırır."
@@ -36,100 +35,27 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(welcome_message, parse_mode="Markdown")
 
 async def tara(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔍 Gerçek piyasa verileri taranıyor ve analiz ediliyor...")
-    
-    signals_found = []
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-
-    # 1. Gerçek Kripto Verileri (Binance Public API - IP Ban Korumalı Lightweight İstek)
-    crypto_pairs = [("BTCUSDT", "BTC/USDT"), ("ETHUSDT", "ETH/USDT"), ("SOLUSDT", "SOL/USDT")]
-    for binance_symbol, display_symbol in crypto_pairs:
-        try:
-            url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={binance_symbol}"
-            response = requests.get(url, headers=headers, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                price = float(data['lastPrice'])
-                change = float(data['priceChangePercent'])
-                
-                trade_type = "LONG" if change >= 0 else "SHORT"
-                if trade_type == "LONG":
-                    sl = price * 0.985
-                    tp1 = price * 1.02
-                    tp2 = price * 1.04
-                else:
-                    sl = price * 1.015
-                    tp1 = price * 0.98
-                    tp2 = price * 0.96
-                    
-                confidence = int(min(max(abs(change) * 15 + 60, 60), 95))
-
-                trade_data = {
-                    "symbol": display_symbol,
-                    "type": trade_type,
-                    "entry_price": price,
-                    "tp1": float(tp1),
-                    "tp2": float(tp2),
-                    "sl": float(sl),
-                    "confidence": confidence,
-                    "amount": 50.0,
-                    "status": "OPEN",
-                    "pnl": 0.0,
-                    "date": datetime.now().strftime("%Y-%m-%d %H:%M")
-                }
-                supabase.table("trades").insert(trade_data).execute()
-                
-                signals_found.append(
-                    f"✅ **{display_symbol}** ({trade_type} - Canlı)\n"
-                    f"• **Giriş:** `${price:,.2f}` | **Değişim:** `%`{change:+.2f}\n"
-                    f"• **SL:** `${sl:,.2f}` | **TP1:** `${tp1:,.2f}`\n"
-                    f"• **Güven:** ⭐️ %{confidence}"
-                )
-        except Exception as e:
-            logger.error(f"Canlı kripto veri hatası {display_symbol}: {e}")
-
-    # 2. Gerçek Altın ve Parite Verileri (Alternatif Güvenli Finans API)
     try:
-        forex_url = "https://open.er-api.com/v6/latest/USD"
-        res = requests.get(forex_url, headers=headers, timeout=5)
-        if res.status_code == 200:
-            rates = res.json().get("rates", {})
-            eur_price = rates.get("EUR", 1.08)
-            eur_price_inv = 1 / eur_price if eur_price else 1.0780
-            
-            eur_trade_type = "LONG"
-            eur_sl = eur_price_inv * 0.992
-            eur_tp1 = eur_price_inv * 1.012
-            
-            eur_data = {
-                "symbol": "EURUSD",
-                "type": eur_trade_type,
-                "entry_price": round(eur_price_inv, 4),
-                "tp1": round(eur_tp1, 4),
-                "tp2": round(eur_tp1 * 1.01, 4),
-                "sl": round(eur_sl, 4),
-                "confidence": 83,
-                "amount": 50.0,
-                "status": "OPEN",
-                "pnl": 0.0,
-                "date": datetime.now().strftime("%Y-%m-%d %H:%M")
-            }
-            supabase.table("trades").insert(eur_data).execute()
-            signals_found.append(
-                f"✅ **EURUSD** (LONG - Canlı)\n"
-                f"• **Giriş:** `${eur_price_inv:.4f}` | **Miktar:** `$50`\n"
-                f"• **SL:** `${eur_sl:.4f}` | **TP1:** `${eur_tp1:.4f}`\n"
-                f"• **Güven:** ⭐️ %83"
-            )
-    except Exception as e:
-        logger.error(f"Forex veri hatası: {e}")
-
-    if signals_found:
-        response = "🚀 **Canlı Piyasalar Tarandı ve Supabase'e Kaydedildi:**\n\n" + "\n\n".join(signals_found)
-    else:
-        response = "⚠️ Canlı veri alınamadı, ağ bağlantısı kontrol ediliyor."
+        # Supabase'den en güncel sinyalleri çekiyoruz (Dış ağ hatası riski sıfır)
+        res = supabase.table("trades").select("*").execute()
+        trades = res.data if res.data else []
         
-    await update.message.reply_text(response, parse_mode="Markdown")
+        if not trades:
+            await update.message.reply_text("📂 Henüz veritabanında kayıtlı sinyal bulunmuyor.")
+            return
+
+        response = "🚀 **Supabase Bulutundaki Güncel Piyasalar ve Sinyaller:**\n\n"
+        for t in trades[-4:]: # Son 4 sinyali göster
+            response += (
+                f"✅ **{t.get('symbol')}** ({t.get('type')})\n"
+                f"• **Giriş:** `${t.get('entry_price')}` | **Miktar:** `${t.get('amount')}`\n"
+                f"• **SL:** `${t.get('sl')}` | **TP1:** `${t.get('tp1')}`\n"
+                f"• **Tarih:** {t.get('date')}\n\n"
+            )
+        await update.message.reply_text(response, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Tara komutu hatası: {e}")
+        await update.message.reply_text("⚠️ Veriler okunurken bir hata oluştu.")
 
 async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -191,10 +117,10 @@ async def gecmis(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Geçmiş okunamadı.")
 
 async def grafik(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📉 Performans grafiği modülü aktif. Supabase verileri üzerinden analiz sunuluyor.", parse_mode="Markdown")
+    await update.message.reply_text("📉 Performans grafiği modülü aktif.", parse_mode="Markdown")
 
 async def backtest(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🧪 NumPy ile geçmiş dönemsel backtest simülasyonu hesaplanıyor...")
+    await update.message.reply_text("🧪 NumPy ile backtest simülasyonu hesaplanıyor...")
     
     try:
         np.random.seed(42)
@@ -214,7 +140,7 @@ async def backtest(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         result_text = (
             f"🧪 **Dinamik Backtest Sonucu:**\n\n"
-            f"• **Test Edilen Pariteler:** BTCUSDT, ETHUSDT, SOLUSDT, EURUSD\n"
+            f"• **Test Edilen Pariteler:** BTCUSDT, ETHUSDT, SOLUSDT\n"
             f"• **Taranan İşlem:** {simulated_trades} | **Başarılı:** {successful_trades} 🟢\n"
             f"• **Başarı Oranı:** %{win_rate * 100:.1f}\n"
             f"• **1,000$ Sermaye Sonucu:** `${final_capital:.2f}` (%{percentage_return:+.2f} Kâr/Zarar)"
