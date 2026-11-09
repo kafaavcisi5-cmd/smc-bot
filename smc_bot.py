@@ -36,7 +36,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def tara(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        # Supabase'den en güncel sinyalleri çekiyoruz (Dış ağ hatası riski sıfır)
         res = supabase.table("trades").select("*").execute()
         trades = res.data if res.data else []
         
@@ -45,7 +44,7 @@ async def tara(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         response = "🚀 **Supabase Bulutundaki Güncel Piyasalar ve Sinyaller:**\n\n"
-        for t in trades[-4:]: # Son 4 sinyali göster
+        for t in trades[-4:]:
             response += (
                 f"✅ **{t.get('symbol')}** ({t.get('type')})\n"
                 f"• **Giriş:** `${t.get('entry_price')}` | **Miktar:** `${t.get('amount')}`\n"
@@ -151,7 +150,8 @@ async def backtest(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Backtest hesaplanırken bir hata oluştu.")
 
 def main():
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    # Bağlantı kopmalarında takılı kalmayı önleyen timeout parametreleri eklendi
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).connect_timeout(10).read_timeout(10).write_timeout(10).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("tara", tara))
@@ -162,7 +162,7 @@ def main():
     app.add_handler(CommandHandler("backtest", backtest))
 
     logger.info("Bot başlatılıyor...")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
